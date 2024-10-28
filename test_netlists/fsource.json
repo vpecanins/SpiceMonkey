@@ -1,0 +1,59 @@
+{
+    "freqmin": 10.0,
+    "freqmax": 10000000000.0,
+    "npoints": 28.0,
+    "dcgain": -10000.0,
+    "log_transform": true,
+    "subs_before_solve": false,
+    "ftol": 1e-10,
+    "xtol": 1e-10,
+    "gtol": 1e-08,
+    "diff_step": 0.001,
+    "max_nfev": 1000.0,
+    "weight_mag": 1.0,
+    "weight_amp": 0.01,
+    "weight_phase": 1.0,
+    "weight_reg": 1.0,
+    "optimize_mag": true,
+    "optimize_phase": true,
+    "makeup_gain": false,
+    "optimize_reg": false,
+    "optim_method": "dogbox",
+    "pztable": [
+        [
+            "Pole real",
+            1730000.0,
+            1
+        ],
+        [
+            "Pole real",
+            -1430000.0,
+            1
+        ]
+    ],
+    "inexpr": "Vin",
+    "outexpr": "V(2)",
+    "netlist": "; CCCS test \nVin 1 0 1 AC 1\nR1 1 2 1K\nC2 1 2 1p\nR2 2 0 2K\nF1 4 5 R2 10\nR4 4 0 5K\nR3 5 0 3K\nC1 4 2 10p\n",
+    "minval": {
+        "R": 10,
+        "L": 1e-09,
+        "C": 1e-14,
+        "G": 1e-06,
+        "E": 1e-06,
+        "F": 1e-06,
+        "H": 1e-06,
+        "K": 1e-06
+    },
+    "maxval": {
+        "R": 1000000000.0,
+        "L": 0.001,
+        "C": 1e-08,
+        "G": 0.01,
+        "E": 1000000.0,
+        "F": 1000000.0,
+        "H": 1000000.0,
+        "K": 1
+    },
+    "netlist_ltspice": "; CCCS test \nVin 1 0 1 AC 1\nR1 1 2 1K\nC2 1 2 1p\nV1 3 2 0 AC 0\nR2 3 0 2K\nF1 4 5 V1 10\nR4 4 0 5K\nR3 5 0 3K\nC1 4 2 10p\n",
+    "netlist_ngspice": "; CCCS test \nVin 1 0 1 AC 1\nR1 1 2 1K\nC2 1 2 1p\nV1 3 2 0 AC 0\nR2 3 0 2K\nF1 4 5 V1 10\nR4 4 0 5K\nR3 5 0 3K\nC1 4 2 10p\n"
+}

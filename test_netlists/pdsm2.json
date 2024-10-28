@@ -1,0 +1,62 @@
+{
+    "freqmin": 10.0,
+    "freqmax": 10000000000.0,
+    "npoints": 28.0,
+    "dcgain": 0.75,
+    "log_transform": true,
+    "subs_before_solve": false,
+    "ftol": 1e-10,
+    "xtol": 1e-10,
+    "gtol": 1e-08,
+    "diff_step": 0.001,
+    "max_nfev": 1000.0,
+    "weight_mag": 1.0,
+    "weight_amp": 0.01,
+    "weight_phase": 1.0,
+    "weight_reg": 1.0,
+    "optimize_mag": true,
+    "optimize_phase": true,
+    "makeup_gain": false,
+    "optimize_reg": false,
+    "inv_method": "LU",
+    "pztable": [
+        [
+            "Pole real",
+            4000.0,
+            1
+        ],
+        [
+            "Pole real",
+            400000.0,
+            1
+        ],
+        [
+            "Zero real",
+            10000000.0,
+            1
+        ]
+    ],
+    "inexpr": "Vin",
+    "outexpr": "V(out)",
+    "netlist": "; Passive input stage 2nd-order ctdsm\nVin 1 0 AC 1\nRin 1 2 50K\nRdac 0 2 50K\nC1 2 0 100p\nG1 0 out 0 2 250u\nR2 0 out 10M\nC2 out 3 20p\nRz 3 0 5K",
+    "minval": {
+        "R": 10,
+        "L": 1e-09,
+        "C": 1e-14,
+        "G": 1e-06,
+        "E": 1e-06,
+        "F": 1e-06,
+        "H": 1e-06,
+        "K": 1e-06
+    },
+    "maxval": {
+        "R": 1000000000.0,
+        "L": 0.001,
+        "C": 1e-08,
+        "G": 0.01,
+        "E": 1000000.0,
+        "F": 1000000.0,
+        "H": 1000000.0,
+        "K": 1
+    }
+}

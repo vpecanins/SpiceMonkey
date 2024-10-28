@@ -1,0 +1,70 @@
+{
+    "freqmin": 10.0,
+    "freqmax": 10000000000.0,
+    "npoints": 30.0,
+    "magnitude": 10.0,
+    "phase": 0.0,
+    "log_transform": true,
+    "subs_before_solve": false,
+    "ftol": 1e-15,
+    "xtol": 1e-14,
+    "gtol": 1e-12,
+    "diff_step": 0.0001,
+    "max_nfev": 1000.0,
+    "weight_mag": 1.0,
+    "weight_amp": 0.01,
+    "weight_phase": 1.0,
+    "weight_reg": 1.0,
+    "linestyle_initial": "o",
+    "linecolor_initial": "green",
+    "linestyle_target": "o",
+    "linecolor_target": "blue",
+    "linestyle_optimized": ".-",
+    "linecolor_optimized": "orange",
+    "parser_case_sensitive": false,
+    "optimize_mag": true,
+    "optimize_phase": true,
+    "makeup_gain": false,
+    "makeup_gain_min": 0.01,
+    "makeup_gain_max": 100.0,
+    "optimize_reg": false,
+    "optim_method": "differential_evolution",
+    "pztable": [
+        [
+            "Pole pair",
+            1000000.0,
+            13.8
+        ],
+        [
+            "Pole real",
+            1000000.0,
+            1
+        ]
+    ],
+    "inexpr": "Vin",
+    "outexpr": "V(out)",
+    "netlist": "; 3rd order Sallen-Key lowpass filter\nVin 1 0 AC 1\nR1 1 2 10k*\nC1 2 0 100p min=10p\nR2 2 3 10K\nC2 3 out 100p min=10p\nR3 3 4 10K\nC3 4 0 100p min=10p\nRa out 5 10K*\nRb 5 0 1K*\nO1 4 5 out\n",
+    "minval": {
+        "R": 1.0,
+        "L": 1e-09,
+        "C": 1.0000000000000002e-14,
+        "G": 1e-06,
+        "E": 1e-06,
+        "F": 1e-06,
+        "H": 1e-06,
+        "K": 1e-06
+    },
+    "maxval": {
+        "R": 1000000000.0,
+        "L": 0.001,
+        "C": 1e-08,
+        "G": 1000000.0,
+        "E": 1000000.0,
+        "F": 1000000.0,
+        "H": 1000000.0,
+        "K": 1.0
+    },
+    "parse_while_typing": true,
+    "solve_while_typing": true,
+    "dcgain": 100.0
+}

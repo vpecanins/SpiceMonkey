@@ -1,0 +1,67 @@
+{
+    "freqmin": 10.0,
+    "freqmax": 10000000000.0,
+    "npoints": 25.0,
+    "dcgain": 50.0,
+    "log_transform": true,
+    "subs_before_solve": false,
+    "ftol": 1e-10,
+    "xtol": 1e-10,
+    "gtol": 1e-08,
+    "diff_step": 0.001,
+    "max_nfev": 1000.0,
+    "weight_mag": 1.0,
+    "weight_amp": 0.1,
+    "weight_phase": 1.0,
+    "weight_reg": 1.0,
+    "optimize_mag": true,
+    "optimize_phase": true,
+    "makeup_gain": true,
+    "optimize_reg": false,
+    "inv_method": "LU",
+    "pztable": [
+        [
+            "Pole pair",
+            18000.0,
+            10.0
+        ],
+        [
+            "Zero real",
+            10000000.0,
+            1
+        ],
+        [
+            "Zero real",
+            10000000.0,
+            1
+        ],
+        [
+            "Pole real",
+            1000.0,
+            1
+        ]
+    ],
+    "inexpr": "Vin",
+    "outexpr": "V(4)",
+    "netlist": "; Simple 2nd-order RC lowpass filter\nVin 1 0 AC 1\nRin 1 2 10K*\nRdac 2 0 10K*\nC1 2 0 100p\nG1 3 0 0 2 100u\nR1 3 0 1M*\nC2 3 5 10p\nCf1 2 3 1p\nRz 5 0 1K\nG2 4 0 0 3 10u\nR3 4 0 1M*\nC3 4 0 1p\nCf2 2 4 1p\n",
+    "minval": {
+        "R": 10,
+        "L": 1e-09,
+        "C": 1e-14,
+        "G": 1e-06,
+        "E": 1e-06,
+        "F": 1e-06,
+        "H": 1e-06,
+        "K": 1e-06
+    },
+    "maxval": {
+        "R": 1000000000.0,
+        "L": 0.001,
+        "C": 1e-08,
+        "G": 0.01,
+        "E": 1000000.0,
+        "F": 1000000.0,
+        "H": 1000000.0,
+        "K": 1
+    }
+}
