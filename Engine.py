@@ -9,9 +9,11 @@ from sympy.parsing.sympy_parser import parse_expr
 from AppState import AppState
 
 import sys
-sys.path.insert(0, "/home/peca/Repos/scipy-leastsquares-callback-new/build-install/lib/python3/dist-packages")
-from scipy.optimize import least_squares, OptimizeResult, differential_evolution, Bounds
+#sys.path.insert(0, "/home/peca/Repos/scipy-leastsquares-callback-new/build-install/lib/python3/dist-packages")
+#from scipy.optimize import least_squares
 
+from vpm_least_squares.least_squares import least_squares
+from scipy.optimize import OptimizeResult, differential_evolution, Bounds
 
 # The circuit solving engine is based on MNA (Modified Nodal Analysis)
 # References:

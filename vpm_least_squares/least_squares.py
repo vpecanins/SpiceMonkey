@@ -243,7 +243,7 @@ def least_squares(
         fun, x0, jac='2-point', bounds=(-np.inf, np.inf), method='trf',
         ftol=1e-8, xtol=1e-8, gtol=1e-8, x_scale=1.0, loss='linear',
         f_scale=1.0, diff_step=None, tr_solver=None, tr_options={},
-        jac_sparsity=None, max_nfev=None, verbose=0, args=(), kwargs={}, outfun=None):
+        jac_sparsity=None, max_nfev=None, verbose=0, args=(), kwargs={}, callback=None):
     """Solve a nonlinear least-squares problem with bounds on the variables.
 
     Given the residuals f(x) (an m-D real function of n real
@@ -758,7 +758,7 @@ def least_squares(
     >>> z = res_wrapped.x[0] + res_wrapped.x[1]*1j
     >>> z
     (0.49999999999925893+0.49999999999925893j)
-    :param outfun: Output function. If returns true, stops the algorithm.
+    :param callback: Output function. If returns true, stops the algorithm.
 
     """
     if method not in ['trf', 'dogbox', 'lm']:
@@ -930,7 +930,7 @@ def least_squares(
     elif method == 'trf':
         result = trf(fun_wrapped, jac_wrapped, x0, f0, J0, lb, ub, ftol, xtol,
                      gtol, max_nfev, x_scale, loss_function, tr_solver,
-                     tr_options.copy(), verbose, outfun)
+                     tr_options.copy(), verbose, callback)
 
     elif method == 'dogbox':
         if tr_solver == 'lsmr' and 'regularize' in tr_options:
@@ -941,7 +941,7 @@ def least_squares(
 
         result = dogbox(fun_wrapped, jac_wrapped, x0, f0, J0, lb, ub, ftol,
                         xtol, gtol, max_nfev, x_scale, loss_function,
-                        tr_solver, tr_options, verbose, outfun)
+                        tr_solver, tr_options, verbose, callback)
 
     result.message = TERMINATION_MESSAGES[result.status]
     result.success = result.status > 0
