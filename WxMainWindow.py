@@ -148,18 +148,15 @@ class WxMainWindow(wx.Frame):
                 self.panel_netlist.enable_optimize(False, settings=True, stop=False)
 
             elif event.event_type == "optim_step":
-                #self.panel_bodeplot.plot(self.engine.f_vec, self.engine.b_initial,
-                #                              event.b_optimized, self.engine.b_target)
                 self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, self.engine.b_optimized)
-                self.panel_netlist.txt_spice_optimized.ChangeValue(self.engine.generate(event.optimized_vals))
+                self.app_state.netlist_optimized = self.engine.generate(event.optimized_vals)
+                self.panel_netlist.txt_spice_optimized.ChangeValue(self.app_state.netlist_optimized)
 
             elif event.event_type == "optim_ok":
                 self.panel_netlist.enable_parse_solve(True)
                 self.panel_netlist.enable_optimize(True, settings=True, stop=False)
                 self.engine.get_optimized_freqresponse()
                 self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, self.engine.b_optimized)
-                #self.panel_bodeplot.plot(self.engine.f_vec, self.engine.b_initial,
-                #                              self.engine.b_optimized, self.engine.b_target)
 
             elif event.event_type == "optim_cancelled":
                 self.panel_netlist.enable_parse_solve(True)

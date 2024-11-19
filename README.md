@@ -1,19 +1,20 @@
+![SpiceMonkey banana icon](banana-icon.png)
 # SpiceMonkey
 A self-contained Python tool to simulate and optimize AC electrical circuits.
-
-![SpiceMonkey banana icon](banana-icon.png)
 
 It takes a SPICE-like description of a circuit, uses Modified Nodal Analysis (MNA) to find the transfer function in the Laplace domain using symbolic expressions (sympy) and it uses least-squares to optimize the elements until we get a desired frequency response
 
 It has a GUI based on wxPython that is multiplatform.
+
+This is meant to be a "table-top" tool running on lab PCs to help you understand your circuit better while you are building it on the protoboard.
 
 For bug reporting use GitHub "Issues" feature
 
 # Setup instructions 
 
 In general:
-1. Install a recent version of Python 3.x
-2. Install all the Python libraries from `requirements.txt`
+1. Install at least Python 3.13 or newer
+2. Install all the required Python libraries: `pip install -r requirements.txt`
 3. Run `python main.py` in your terminal to launch the GUI
 
 ## MS Windows

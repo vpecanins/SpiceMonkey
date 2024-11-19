@@ -290,8 +290,15 @@ class WxMainMenu(wx.MenuBar):
             self.file_cir = fileDialog.GetPath()
             try:
                 with open(self.file_cir, 'w') as file:
-                    # TODO save cir file
-                    pass
+                    if self.root.panel_netlist.notebook.GetSelection() == 0:
+                        # Export original netlist
+                        file.write(self.root.app_state.netlist)
+                    else:
+                        # Export optimized netlist
+                        file.write(self.root.app_state.netlist_optimized)
+
+                    file.close()
+
             except IOError:
                 wx.LogError("Cannot save current data in file '%s'." % self.file_cir)
 

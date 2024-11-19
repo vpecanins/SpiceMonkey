@@ -1,5 +1,3 @@
-""" VPM: Patched scipy library to support MATLAB-like outfun """
-
 """Trust Region Reflective algorithm for least-squares optimization.
 
 The algorithm is based on ideas from paper [STIR]_. The main idea is to
@@ -112,7 +110,7 @@ from scipy.optimize._lsq.common import (
 
 
 def trf(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev, x_scale,
-        loss_function, tr_solver, tr_options, verbose, outfun):
+        loss_function, tr_solver, tr_options, verbose, callback=None):
     # For efficiency, it makes sense to run the simplified version of the
     # algorithm when no bounds are imposed. We decided to write the two
     # separate functions. It violates the DRY principle, but the individual
@@ -120,11 +118,11 @@ def trf(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev, x_scale,
     if np.all(lb == -np.inf) and np.all(ub == np.inf):
         return trf_no_bounds(
             fun, jac, x0, f0, J0, ftol, xtol, gtol, max_nfev, x_scale,
-            loss_function, tr_solver, tr_options, verbose, outfun)
+            loss_function, tr_solver, tr_options, verbose, callback=callback)
     else:
         return trf_bounds(
             fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev, x_scale,
-            loss_function, tr_solver, tr_options, verbose, outfun)
+            loss_function, tr_solver, tr_options, verbose, callback=callback)
 
 
 def select_step(x, J_h, diag_h, g_h, p, p_h, d, Delta, lb, ub, theta):
@@ -205,7 +203,8 @@ def select_step(x, J_h, diag_h, g_h, p, p_h, d, Delta, lb, ub, theta):
 
 
 def trf_bounds(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev,
-               x_scale, loss_function, tr_solver, tr_options, verbose, outfun=None):
+               x_scale, loss_function, tr_solver, tr_options, verbose,
+               callback=None):
     x = x0.copy()
 
     f = f0
@@ -239,7 +238,7 @@ def trf_bounds(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev,
 
     g_norm = norm(g * v, ord=np.inf)
 
-    f_augmented = np.zeros((m + n))
+    f_augmented = np.zeros(m + n)
     if tr_solver == 'exact':
         J_augmented = np.empty((m + n, n))
     elif tr_solver == 'lsmr':
@@ -339,7 +338,6 @@ def trf_bounds(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev,
             x_new = make_strictly_feasible(x + step, lb, ub, rstep=0)
             f_new = fun(x_new)
             nfev += 1
-            print("nfev= "+str(nfev))
 
             step_h_norm = norm(step_h)
 
@@ -358,10 +356,8 @@ def trf_bounds(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev,
                 step_h_norm, step_h_norm > 0.95 * Delta)
 
             step_norm = norm(step)
-
             termination_status = check_termination(
                 actual_reduction, cost, step_norm, norm(x), ratio, ftol, xtol)
-
             if termination_status is not None:
                 break
 
@@ -391,15 +387,24 @@ def trf_bounds(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev,
             step_norm = 0
             actual_reduction = 0
 
-        # Call output function and possibly stop optimization
-        if outfun is not None:
-            stop = outfun(x_new, f_new, cost_new, iteration)
+        iteration += 1
 
-            if stop:
+        # Call callback function and possibly stop optimization
+        if callback is not None:
+            intermediate_result = OptimizeResult(
+                x=x_new, fun=f_new, nit=iteration, nfev=nfev)
+            intermediate_result["cost"] = cost_new
+
+            try:
+                if callback(intermediate_result):
+                    # Callback returns True, stop optimization
+                    termination_status = -2
+                    break
+            except StopIteration:
+                # Callback raises StopIteration, stop optimization
                 termination_status = -2
                 break
 
-        iteration += 1
 
     if termination_status is None:
         termination_status = 0
@@ -412,7 +417,8 @@ def trf_bounds(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev,
 
 
 def trf_no_bounds(fun, jac, x0, f0, J0, ftol, xtol, gtol, max_nfev,
-                  x_scale, loss_function, tr_solver, tr_options, verbose, outfun=None):
+                  x_scale, loss_function, tr_solver, tr_options, verbose,
+                  callback=None):
     x = x0.copy()
 
     f = f0
@@ -530,10 +536,8 @@ def trf_no_bounds(fun, jac, x0, f0, J0, ftol, xtol, gtol, max_nfev,
                 step_h_norm, step_h_norm > 0.95 * Delta)
 
             step_norm = norm(step)
-
             termination_status = check_termination(
                 actual_reduction, cost, step_norm, norm(x), ratio, ftol, xtol)
-
             if termination_status is not None:
                 break
 
@@ -563,15 +567,23 @@ def trf_no_bounds(fun, jac, x0, f0, J0, ftol, xtol, gtol, max_nfev,
             step_norm = 0
             actual_reduction = 0
 
-        # Call output function and possibly stop optimization
-        if outfun is not None:
-            stop = outfun(x_new, f_new, cost_new, iteration)
+        iteration += 1
 
-            if stop:
+        # Call callback function and possibly stop optimization
+        if callback is not None:
+            intermediate_result = OptimizeResult(
+                x=x_new, fun=f_new, nit=iteration, nfev=nfev)
+            intermediate_result["cost"] = cost_new
+
+            try:
+                if callback(intermediate_result):
+                    # Callback returns True, stop optimization
+                    termination_status = -2
+                    break
+            except StopIteration:
+                # Callback raises StopIteration, stop optimization
                 termination_status = -2
                 break
-
-        iteration += 1
 
     if termination_status is None:
         termination_status = 0

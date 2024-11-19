@@ -1,5 +1,3 @@
-""" VPM: Patched scipy library to support MATLAB-like outfun """
-
 """
 Dogleg algorithm with rectangular trust regions for least-squares minimization.
 
@@ -149,7 +147,7 @@ def dogleg_step(x, newton_step, g, a, b, tr_bounds, lb, ub):
 
 
 def dogbox(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev, x_scale,
-           loss_function, tr_solver, tr_options, verbose, outfun=None):
+           loss_function, tr_solver, tr_options, verbose, callback=None):
     f = f0
     f_true = f.copy()
     nfev = 1
@@ -287,7 +285,6 @@ def dogbox(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev, x_scale,
             )
 
             step_norm = norm(step)
-
             termination_status = check_termination(
                 actual_reduction, cost, step_norm, norm(x), ratio, ftol, xtol)
 
@@ -324,15 +321,23 @@ def dogbox(fun, jac, x0, f0, J0, lb, ub, ftol, xtol, gtol, max_nfev, x_scale,
             step_norm = 0
             actual_reduction = 0
 
-        # Call output function and possibly stop optimization
-        if outfun is not None:
-            stop = outfun(x_new, f_new, cost_new, iteration)
+        iteration += 1
 
-            if stop:
+        # Call callback function and possibly stop optimization
+        if callback is not None:
+            intermediate_result = OptimizeResult(
+                x=x_new, fun=f_new, nit=iteration, nfev=nfev)
+            intermediate_result["cost"] = cost_new
+
+            try:
+                if callback(intermediate_result):
+                    # Callback returns True, stop optimization
+                    termination_status = -2
+                    break
+            except StopIteration:
+                # Callback raises StopIteration, stop optimization
                 termination_status = -2
                 break
-
-        iteration += 1
 
     if termination_status is None:
         termination_status = 0
