@@ -41,13 +41,14 @@ class AppState(dict):
         self["weight_phase"] = 0.01
         self["weight_reg"] = 0.01
 
-        self["linestyle_initial"] = "o"
-        self["linecolor_initial"] = "green"
+        self["linestyle_original"] = "o"
+        self["linecolor_original"] = "green"
         self["linestyle_target"] = "o"
         self["linecolor_target"] = "blue"
         self["linestyle_optimized"] = ".-"
         self["linecolor_optimized"] = "orange"
         self["parser_case_sensitive"] = False
+        self["magnitude_log"] = True
 
         self["optimize_mag"] = True
         self["optimize_phase"] = False
@@ -60,6 +61,7 @@ class AppState(dict):
         self["inexpr"] = ""
         self["outexpr"] = ""
         self["netlist"] = ""
+        self["netlist_optimized"] = ""
         self["minval"] = {"R": 1e-9, "L": 1e-9, "C": 10e-15, "E": 1e-6, "F": 1e-6, "G": 1e-6, "H": 1e-6, "K": 0}
         self["maxval"] = {"R": 1e9,  "L": 1,    "C": 1,      "E": 1e6,  "F": 1e6,  "G": 1e6,  "H": 1e6, "K": 1}
         self["parse_while_typing"] = True

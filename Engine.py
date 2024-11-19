@@ -644,7 +644,7 @@ class Engine:
     def generate(self, new_elems: dict):
         lines_new = self.lines  # self.lines.copy()
 
-        # Substitute linesof optimized components with optimized values
+        # Substitute lines of optimized components with optimized values
         for idx, f in self.optimized_lines.items():
             key = f[0].upper()
             if key in new_elems.keys():
@@ -1018,7 +1018,7 @@ class Engine:
 
         return optimized_vals, makeup_gain
 
-    def optimizer_thread_func(self):
+    def optimize(self):
 
         def resfun(xin):
 

@@ -128,6 +128,14 @@ class WxBodePlot(wx.Panel):
         # Skip focus, otherwise it catches Ctrl+S which should be caught by the main menu
         self.canvas.Bind(wx.EVT_SET_FOCUS, self.on_set_focus, self.canvas)
 
+        # Lines of plots
+        self.line_original_mag = None
+        self.line_original_ph = None
+        self.line_target_mag = None
+        self.line_target_ph = None
+        self.line_optimized_mag = None
+        self.line_optimized_ph = None
+
     def on_set_focus(self, event):
         # Workaround: Avoid getting the focus
         wx.CallAfter(self.Navigate)
@@ -161,41 +169,56 @@ class WxBodePlot(wx.Panel):
             line.remove()
         ax.set_prop_cycle(None)
 
-    def plot(self, f_vec: np.ndarray, initial: np.ndarray, optimized: np.ndarray, target: np.ndarray):
-        with self.lock:
-            if not self.setup_done:
-                self.setup()
+    # def plot_original(self, f_vec: np.ndarray, original: np.ndarray):
+    #     with self.lock:
+    #         if self.line_original_mag is not None:
+    #             self.line_original_mag.set_xdata(f_vec)
+    #             self.line_original_mag.set_ydata(original[0, :])
+    #         if self.line_original_ph is not None:
+    #             self.line_original_ph.set_xdata(f_vec)
+    #             self.line_original_ph.set_ydata(original[1, :])
 
-            self.clear_axis(self.ax_mag)
-            self.clear_axis(self.ax_ph)
-
-            self.f_vec = f_vec
-            self.ax_mag.set_xlim(left=self.f_vec[0], right=self.f_vec[-1])
-            self.ax_ph.set_xlim(left=self.f_vec[0], right=self.f_vec[-1])
-
-            # Plot initial
-            if initial is not None:
-                self.ax_mag.plot(self.f_vec, initial[0,:], self.root.app_state.linestyle_initial,
-                                 color=self.root.app_state.linecolor_initial, label='Initial')
-                self.ax_ph.plot(self.f_vec, initial[1,:], self.root.app_state.linestyle_initial,
-                                color=self.root.app_state.linecolor_initial, label='Initial')
-
-            if target is not None:
-                self.ax_mag.plot(self.f_vec, target[0,:], self.root.app_state.linestyle_target,
-                                 color=self.root.app_state.linecolor_target, label='Target')
-                self.ax_ph.plot(self.f_vec, target[1,:], self.root.app_state.linestyle_target,
-                                color=self.root.app_state.linecolor_target, label='Target')
-
-            if optimized is not None:
-                self.ax_mag.plot(self.f_vec, optimized[0,:], self.root.app_state.linestyle_optimized,
-                                 color=self.root.app_state.linecolor_optimized, label='Optimized')
-                self.ax_ph.plot(self.f_vec, optimized[1,:],  self.root.app_state.linestyle_optimized,
-                                color=self.root.app_state.linecolor_optimized, label='Optimized')
-
-            # Comment this?
-            #self.ax_mag.autoscale(enable=True, axis='y')
-            #self.ax_ph.autoscale(enable=True, axis='y')
-            self.finish_plot()
+    # def plot(self, f_vec: np.ndarray, original: np.ndarray or None, optimized: np.ndarray or None, target: np.ndarray or None):
+    #     with self.lock:
+    #         if not self.setup_done:
+    #             self.setup()
+    #
+    #         self.clear_axis(self.ax_mag)
+    #         self.clear_axis(self.ax_ph)
+    #
+    #         self.f_vec = f_vec
+    #         self.ax_mag.set_xlim(left=self.f_vec[0], right=self.f_vec[-1])
+    #         self.ax_ph.set_xlim(left=self.f_vec[0], right=self.f_vec[-1])
+    #
+    #         # Plot original
+    #         if original is not None:
+    #             self.line_original_mag = \
+    #                 self.ax_mag.plot(self.f_vec, original[0, :], self.root.app_state.linestyle_original,
+    #                              color=self.root.app_state.linecolor_original, label='Original')
+    #             self.line_original_ph = \
+    #                 self.ax_ph.plot(self.f_vec, original[1, :], self.root.app_state.linestyle_original,
+    #                             color=self.root.app_state.linecolor_original, label='Original')
+    #
+    #         if target is not None:
+    #             self.line_target_mag = \
+    #                 self.ax_mag.plot(self.f_vec, target[0,:], self.root.app_state.linestyle_target,
+    #                              color=self.root.app_state.linecolor_target, label='Target')
+    #             self.line_target_ph = \
+    #                 self.ax_ph.plot(self.f_vec, target[1,:], self.root.app_state.linestyle_target,
+    #                             color=self.root.app_state.linecolor_target, label='Target')
+    #
+    #         if optimized is not None:
+    #             self.line_optimized_mag = \
+    #                 self.ax_mag.plot(self.f_vec, optimized[0,:], self.root.app_state.linestyle_optimized,
+    #                              color=self.root.app_state.linecolor_optimized, label='Optimized')
+    #             self.line_optimized_ph = \
+    #                 self.ax_ph.plot(self.f_vec, optimized[1,:],  self.root.app_state.linestyle_optimized,
+    #                             color=self.root.app_state.linecolor_optimized, label='Optimized')
+    #
+    #         # Comment this?
+    #         #self.ax_mag.autoscale(enable=True, axis='y')
+    #         #self.ax_ph.autoscale(enable=True, axis='y')
+    #         self.finish_plot()
 
     def finish_plot(self):
         self.ax_mag.relim()
@@ -210,28 +233,36 @@ class WxBodePlot(wx.Panel):
         self.fig.canvas.draw()  # draw must be used when calling from optimization, with the locks there
         self.Update()
 
-    def plot_line(self, name: str, data: np.ndarray):
-        assert self.setup_done
+    def plot_line(self, name: str, f_vec: np.ndarray, data: np.ndarray):
         assert not self.lock.locked()
         with self.lock:
+            if not self.setup_done:
+                self.setup()
+
+            # Find line with label matching 'name' and update the X and Y data
             line_found = False
 
             for line in self.ax_mag.get_lines():
                 if line.get_label() == name:
+                    line.set_xdata(f_vec)
                     line.set_ydata(data[0,:])
                     line_found = True
 
             for line in self.ax_ph.get_lines():
                 if line.get_label() == name:
+                    line.set_xdata(f_vec)
                     line.set_ydata(data[1,:])
                     line_found = True
 
+            # If line is not found and name is valid, create new line
             if not line_found:
-                self.ax_mag.plot(self.f_vec, data[0, :], self.root.app_state.linestyle_target,
-                                 color=self.root.app_state.linecolor_target, label=name)
-                self.ax_ph.plot(self.f_vec, data[1, :], self.root.app_state.linestyle_target,
-                                color=self.root.app_state.linecolor_target, label=name)
+                if name.lower() in ["original", "target", "optimized"]:
+                    self.ax_mag.plot(f_vec, data[0, :], self.root.app_state["linestyle_"+name.lower()],
+                                     color=self.root.app_state["linecolor_"+name.lower()], label=name)
+                    self.ax_ph.plot(f_vec, data[1, :], self.root.app_state["linestyle_"+name.lower()],
+                                    color=self.root.app_state["linecolor_"+name.lower()], label=name)
 
+            # Rearranges axis limits, calls tight_layout and draws plot
             self.finish_plot()
 
     def setup_xaxis(self, ax):

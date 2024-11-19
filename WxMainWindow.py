@@ -90,11 +90,14 @@ class WxMainWindow(wx.Frame):
     def update_callback(self):
         #print("Update callback")
         self.engine.get_target_freqresponse()
+        self.panel_bodeplot.plot_line("Target", self.engine.f_vec, self.engine.b_target)
+
         if self.engine.output_expr_initial is not None:
             self.engine.get_initial_freqresponse()
-            self.panel_bodeplot.plot(self.engine.f_vec, self.engine.b_initial, None, self.engine.b_target)
-        else:
-            self.panel_bodeplot.plot(self.engine.f_vec, None, None, self.engine.b_target)
+            if self.panel_netlist.selected_tab == 0:
+                self.panel_bodeplot.plot_line("Original", self.engine.f_vec, self.engine.b_initial)
+            else:
+                self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, self.engine.b_initial)
 
     def load_all_states(self):
         # Called by menu when opening state file
@@ -145,16 +148,18 @@ class WxMainWindow(wx.Frame):
                 self.panel_netlist.enable_optimize(False, settings=True, stop=False)
 
             elif event.event_type == "optim_step":
-                self.panel_bodeplot.plot(self.engine.f_vec, self.engine.b_initial,
-                                              event.b_optimized, self.engine.b_target)
+                #self.panel_bodeplot.plot(self.engine.f_vec, self.engine.b_initial,
+                #                              event.b_optimized, self.engine.b_target)
+                self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, self.engine.b_optimized)
                 self.panel_netlist.txt_spice_optimized.ChangeValue(self.engine.generate(event.optimized_vals))
 
             elif event.event_type == "optim_ok":
                 self.panel_netlist.enable_parse_solve(True)
                 self.panel_netlist.enable_optimize(True, settings=True, stop=False)
                 self.engine.get_optimized_freqresponse()
-                self.panel_bodeplot.plot(self.engine.f_vec, self.engine.b_initial,
-                                              self.engine.b_optimized, self.engine.b_target)
+                self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, self.engine.b_optimized)
+                #self.panel_bodeplot.plot(self.engine.f_vec, self.engine.b_initial,
+                #                              self.engine.b_optimized, self.engine.b_target)
 
             elif event.event_type == "optim_cancelled":
                 self.panel_netlist.enable_parse_solve(True)
