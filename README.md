@@ -10,6 +10,10 @@ This is meant to be a "table-top" tool running on lab PCs to help you understand
 
 For bug reporting use GitHub "Issues" feature
 
+# Screenshot (Linux)
+
+![SpiceMonkey screenshot](screenshot.png)
+
 # Setup instructions 
 
 In general:
