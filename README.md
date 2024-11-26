@@ -18,6 +18,10 @@ For bug reporting use GitHub "Issues" feature
 
 ![SpiceMonkey screenshot](screenshot_mac.png)
 
+# Screenshot (Windows)
+
+![SpiceMonkey screenshot](screenshot_windows.png)
+
 # Setup instructions 
 
 In general:
