@@ -123,28 +123,33 @@ class WxMainWindow(wx.Frame):
         if hasattr(event, "event_type"):
             if event.event_type == "parser_ok":
                 self.panel_netlist.fill_combos()
-                self.panel_netlist.enable_parse_solve(True)
+                self.panel_netlist.enable_parse_solve(True, True)
                 self.panel_netlist.enable_optimize(False, settings=True, stop=False)
 
             elif event.event_type == "parser_error":
-                self.panel_netlist.fill_combos()
-                self.panel_netlist.enable_parse_solve(True)
+                self.panel_netlist.enable_parse_solve(True, False)
                 self.panel_netlist.enable_optimize(False, settings=True, stop=False)
 
             elif event.event_type == "parser_ok_solving":
                 # Do not update combos here, as user might be typing some in/out expression not valid yet
-                self.panel_netlist.enable_parse_solve(False)
+                self.panel_netlist.enable_parse_solve(False, False)
                 self.panel_netlist.enable_optimize(False, settings=True, stop=False)
 
             elif event.event_type == "solver_ok":
                 self.panel_netlist.fill_combos()
                 self.update_callback()
-                self.panel_netlist.enable_parse_solve(True)
+                self.panel_netlist.enable_parse_solve(True, True)
                 self.panel_netlist.enable_optimize(True, settings=True, stop=False)
+
+            elif event.event_type == "solver_ok_optimizing":
+                self.panel_netlist.fill_combos()
+                self.update_callback()
+                self.panel_netlist.enable_parse_solve(False, False)
+                self.panel_netlist.enable_optimize(False, settings=False, stop=True)
 
             elif event.event_type == "solver_error":
                 self.update_callback()
-                self.panel_netlist.enable_parse_solve(True)
+                self.panel_netlist.enable_parse_solve(True, True)
                 self.panel_netlist.enable_optimize(False, settings=True, stop=False)
 
             elif event.event_type == "optim_step":
@@ -153,15 +158,18 @@ class WxMainWindow(wx.Frame):
                 self.panel_netlist.txt_spice_optimized.ChangeValue(self.app_state.netlist_optimized)
 
             elif event.event_type == "optim_ok":
-                self.panel_netlist.enable_parse_solve(True)
+                self.panel_netlist.enable_parse_solve(True, True)
                 self.panel_netlist.enable_optimize(True, settings=True, stop=False)
+                self.panel_netlist.selected_tab = 1
                 self.engine.get_optimized_freqresponse()
                 self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, self.engine.b_optimized)
 
             elif event.event_type == "optim_cancelled":
-                self.panel_netlist.enable_parse_solve(True)
+                self.panel_netlist.enable_parse_solve(True, True)
                 self.panel_netlist.enable_optimize(True, settings=True, stop=False)
+                self.panel_netlist.selected_tab = 1
 
             elif event.event_type == "optim_error":
-                self.panel_netlist.enable_parse_solve(True)
+                self.panel_netlist.enable_parse_solve(True, True)
                 self.panel_netlist.enable_optimize(True, settings=True, stop=False)
+                self.panel_netlist.selected_tab = 1

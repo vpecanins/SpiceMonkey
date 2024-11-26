@@ -29,7 +29,7 @@
     "makeup_gain_min": 0.01,
     "makeup_gain_max": 100.0,
     "optimize_reg": false,
-    "optim_method": "dogbox",
+    "optim_method": "trf",
     "pztable": [
         [
             "Pole pair",

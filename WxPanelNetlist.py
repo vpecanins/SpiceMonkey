@@ -33,6 +33,8 @@ class WxPanelNetlist(wx.Panel):
 
         # Notebook
         self.notebook = wx.Notebook(self)
+        self.notebook.Bind(wx.EVT_NOTEBOOK_PAGE_CHANGED, self.event_handler_notebook)
+        self.notebook.Bind(wx.EVT_NOTEBOOK_PAGE_CHANGING, self.event_handler_notebook_changing)
 
         # ORIGINAL SPICE TEXT VIEW
         ############################################################
@@ -115,7 +117,7 @@ class WxPanelNetlist(wx.Panel):
         # Start parse & solve thread if enabled while typing
         if self.root.app_state.parse_while_typing:
             if not self.worker_lock.locked():
-                self.enable_parse_solve(False)
+                self.enable_parse_solve(False, False)
                 self.parser_solver_called_while_typing = True
                 self.worker_thread = threading.Thread(target=self.parser_solver_thread_fun)
                 self.worker_thread.start()
@@ -125,7 +127,18 @@ class WxPanelNetlist(wx.Panel):
         if v != "":
             self.txt_spice.SetValue(v)
             self.notebook.SetSelection(0)
+            self.selected_tab = 0
             self.event_handler_text(event)
+
+    def event_handler_notebook(self, event):
+        # If optimization is not ongoing, change the current tab
+        if self.btn_parse_solve.Enabled:
+            self.selected_tab = self.notebook.GetSelection()
+
+    def event_handler_notebook_changing(self, event):
+        # If optimization is ongoing, avoid changing the current tab
+        if not self.btn_parse_solve.Enabled:
+            event.Veto()
 
     def update_line_col(self, event):
         x, lx, cx = self.txt_spice.PositionToXY(self.txt_spice.GetInsertionPoint())
@@ -147,18 +160,19 @@ class WxPanelNetlist(wx.Panel):
         else:
             outexpr_valid, _, _ = self.engine.validate_output_expr()
             if outexpr_valid is not None:
-                self.enable_parse_solve(False)
+                # Output expression is valid, call solver
+                self.enable_parse_solve(False, False)
                 self.enable_optimize(False)
                 self.worker_thread = threading.Thread(target=self.parser_solver_thread_fun)
                 self.worker_thread.start()
 
         event.Skip()
 
-    def enable_parse_solve(self, enable=False):
+    def enable_parse_solve(self, enable=False, combos=False):
         # Called whenever we need to enable or disable gui elements for parse/solve
         self.btn_parse_solve.Enable(enable)
-        self.combobox_out.Enable(enable)
-        self.combobox_in.Enable(enable)
+        self.combobox_out.Enable(combos)
+        self.combobox_in.Enable(combos)
         self.root.menubar.netlistItem["parse"].Enable(enable)
         self.root.menubar.netlistItem["subs_before_solve"].Enable(enable)
 
@@ -184,7 +198,7 @@ class WxPanelNetlist(wx.Panel):
     def event_handler_btn_parse_solve(self, event):
         assert (not self.worker_lock.locked())  # Buttons are disabled while solving so should never be called
 
-        self.enable_parse_solve(False)  # TODO: Move this to callback_worker_thread_event, create event parse_solve_start
+        self.enable_parse_solve(False, False)  # TODO: Move this to callback_worker_thread_event, create event parse_solve_start
         self.enable_optimize(False, settings=True)  # TODO: Move this to callback_worker_thread_event, create event parse_solve_start
         self.parser_solver_called_while_typing = False
         self.worker_thread = threading.Thread(target=self.parser_solver_thread_fun)
@@ -197,10 +211,14 @@ class WxPanelNetlist(wx.Panel):
             self.btn_optimize.Enable(False)
             self.root.statusbar.SetStatusText("Stopping optimization...")  # NO move this to callback, optimizer has delay before handling flag
         else:
+
+            selected_tab_bak = self.selected_tab
+            self.notebook.SetSelection(1)  # This calls event_handler_notebook and overwrites selected_tab, so we need to back it up before
+            self.selected_tab = selected_tab_bak
+
             self.enable_optimize(False, settings=False, stop=True)
-            self.enable_parse_solve(False)
+            self.enable_parse_solve(False, False)
             self.root.statusbar.SetStatusText("Starting optimization...")   # TODO: Move this to callback_worker_thread_event, create event optimize_start
-            self.notebook.SetSelection(1)
 
             # Launch least squares optimization in a separate thread
             self.worker_thread = threading.Thread(target=self.optimizer_thread_fun)
@@ -208,7 +226,33 @@ class WxPanelNetlist(wx.Panel):
 
     def optimizer_thread_fun(self):
         with self.worker_lock:
-            self.engine.optimize()
+            # Depending on which tab is selected, use netlist or netlist_optimized
+            if self.selected_tab == 0:
+                self.debug_print("parser: start with original")
+                parser_status = self.engine.parse(self.root.app_state.netlist)
+            else:
+                self.debug_print("parser: start with optimized")
+                parser_status = self.engine.parse(self.root.app_state.netlist_optimized)
+
+            if parser_status:
+                # Parser completed successfully, call solver
+                wx.PostEvent(self.root, ResultEvent("parser_ok_solving", self.engine))
+
+                solver_status = self.engine.solve()
+
+                if solver_status:
+                    # Solver completed successfully
+                    wx.PostEvent(self.root, ResultEvent("solver_ok_optimizing", self.engine))
+
+                    # Call optimizer
+                    self.engine.optimize()
+                else:
+                    # Solver error
+                    wx.PostEvent(self.root, ResultEvent("solver_error", self.engine))
+
+            else:
+                r = ResultEvent("parser_error", self.engine)
+                wx.PostEvent(self.root, r)  # Event handled by callback_engine_thread_event
 
     def parser_solver_thread_fun(self):
 
@@ -224,10 +268,11 @@ class WxPanelNetlist(wx.Panel):
                     self.changed_flag.clear()
 
                     # Depending on which tab is selected, use netlist or netlist_optimized
-                    self.selected_tab = self.notebook.GetSelection()
-                    if self.notebook.GetSelection() == 0:
+                    if self.selected_tab == 0:
+                        self.debug_print("parser: start with original")
                         parser_status = self.engine.parse(self.root.app_state.netlist)
                     else:
+                        self.debug_print("parser: start with optimized")
                         parser_status = self.engine.parse(self.root.app_state.netlist_optimized)
 
                     if self.parser_solver_called_while_typing:
@@ -240,11 +285,12 @@ class WxPanelNetlist(wx.Panel):
                 else:
                     # Netlist text changed during parser. Must parse again.
                     # Depending on which tab is selected, update netlist or netlist_optimized
-                    if self.notebook.GetSelection() == 0:
+                    if self.selected_tab == 0:
+                        self.debug_print("parser: changed original before start of solving")
                         self.root.app_state.netlist = self.txt_spice.GetValue()
                     else:
+                        self.debug_print("parser: changed optimized before start of solving")
                         self.root.app_state.netlist_optimized = self.txt_spice_optimized.GetValue()
-                    self.debug_print("Changed before starting solving")
 
             if parser_status:
                 # Parser completed correctly
@@ -277,12 +323,13 @@ class WxPanelNetlist(wx.Panel):
             else:
                 # Changed while solving, must parse & solve again
                 # Depending on which tab is selected, update netlist or netlist_optimized
-                self.selected_tab = self.notebook.GetSelection()
-                if self.notebook.GetSelection() == 0:
+                # self.selected_tab = self.notebook.GetSelection()
+                if self.selected_tab == 0:
+                    self.debug_print("parser: changed original after start of solving")
                     self.root.app_state.netlist = self.txt_spice.GetValue()
                 else:
+                    self.debug_print("parser: changed optimized after start of solving")
                     self.root.app_state.netlist_optimized = self.txt_spice_optimized.GetValue()
-                self.debug_print("Changed after starting solving")
 
     def fill_combos(self):
         inexpr_bak = self.root.app_state.inexpr
