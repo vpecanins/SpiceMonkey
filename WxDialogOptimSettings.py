@@ -44,11 +44,9 @@ class WxDialogOptimSettings(wx.Dialog):
         gsizer.Add(wx.StaticText(self, -1, "Optimization algorithm: ", style=wx.ALIGN_LEFT), proportion=1,
                        flag=wx.EXPAND | wx.ALL, border=5)
 
-        self.combo = wx.ComboBox(self, id=wx.ID_ANY, value="",
-                               choices=["trf", "dogbox", "differential_evolution"],
-                               style=wx.CB_READONLY)
+        self.algorithm_choice = wx.Choice(self, id=wx.ID_ANY, choices=["trf", "dogbox", "differential_evolution"])
 
-        gsizer.Add(self.combo, proportion=2, flag=wx.ALIGN_LEFT)
+        gsizer.Add(self.algorithm_choice, proportion=2, flag=wx.ALIGN_LEFT)
 
         # The rest of the boxes
         for el in self.setting_arr:
@@ -69,13 +67,13 @@ class WxDialogOptimSettings(wx.Dialog):
         self.SetAutoLayout(True)
 
     def load_state(self):
-        self.combo.ChangeValue(self.app_state.optim_method)
+        self.algorithm_choice.SetSelection(self.algorithm_choice.FindString(self.app_state.optim_method))
         for el in self.texts.keys():
             self.texts[el].SetValue(str(self.app_state[el]))
 
     def callback_evt_button(self, event):
         if event.GetId() == wx.ID_OK or event.GetId() == wx.ID_APPLY:
-            self.app_state.optim_method = self.combo.GetValue()
+            self.app_state.optim_method = self.algorithm_choice.GetString(self.algorithm_choice.GetSelection())
             for key, el in self.texts.items():
                 self.app_state[key] = eng2num(el.GetValue())
         event.Skip()

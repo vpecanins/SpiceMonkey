@@ -15,25 +15,26 @@
     "weight_amp": 0.01,
     "weight_phase": 1.0,
     "weight_reg": 1.0,
-    "linestyle_initial": "o",
-    "linecolor_initial": "green",
+    "linestyle_original": "o",
+    "linecolor_original": "green",
     "linestyle_target": "o",
     "linecolor_target": "blue",
     "linestyle_optimized": ".-",
     "linecolor_optimized": "orange",
     "parser_case_sensitive": false,
+    "magnitude_log": true,
     "optimize_mag": true,
     "optimize_phase": true,
-    "makeup_gain": false,
+    "makeup_gain": true,
     "makeup_gain_min": 0.01,
     "makeup_gain_max": 100.0,
     "optimize_reg": false,
-    "optim_method": "trf",
+    "optim_method": "dogbox",
     "pztable": [
         [
             "Pole pair",
             1000000.0,
-            13.8
+            1.0
         ],
         [
             "Pole real",
@@ -41,9 +42,10 @@
             1
         ]
     ],
-    "inexpr": "Vin",
+    "inexpr": "Vdac",
     "outexpr": "V(out)",
-    "netlist": "; 3rd order Sallen-Key lowpass filter\nVin 1 0 AC 1\nR1 1 2 10k*\nC1 2 0 100p min=10p\nR2 2 3 10K\nC2 3 out 100p min=10p\nR3 3 4 10K\nC3 4 0 100p min=10p\nRa out 5 10K*\nRb 5 0 1K*\nO1 4 5 out\n",
+    "netlist": "; 3rd order Sallen-Key lowpass filter\nVin 1 0 AC 1\nVdac 6 0 AC 1\nRdac 6 2 {2*R1}\nR1 1 2 10k\nC1 2 0 100p min=10p\nR2 2 3 10K\nC2 3 out 100p min=10p\nR3 3 4 10K\nC3 4 0 100p min=10p\nRa out 5 10K*\nRb 5 0 1K*\nO1 4 5 out\n",
+    "netlist_optimized": "; 3rd order Sallen-Key lowpass filter\nVin 1 0 AC 1\nVdac 6 0 AC 1\nRdac 6 2 {2*R1} ; 534.50\nR1 1 2 267.25\nC1 2 0 1.4447n min=10p\nR2 2 3 577.1\nC2 3 out 90.615p min=10p\nR3 3 4 507.39\nC3 4 0 590.25p min=10p\nRa out 5 10K*\nRb 5 0 1K*\nO1 4 5 out\n",
     "minval": {
         "R": 1.0,
         "L": 1e-09,
@@ -66,5 +68,7 @@
     },
     "parse_while_typing": true,
     "solve_while_typing": true,
+    "linestyle_initial": "o",
+    "linecolor_initial": "green",
     "dcgain": 100.0
 }

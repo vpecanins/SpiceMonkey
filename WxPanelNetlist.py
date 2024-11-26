@@ -20,9 +20,9 @@ class WxPanelNetlist(wx.Panel):
         self.selected_tab = 0
 
         # In/out combo boxes
-        self.combobox_in = wx.ComboBox(self, style=wx.TE_PROCESS_ENTER)
+        self.combobox_in = wx.Choice(self)
         self.combobox_out = wx.ComboBox(self, style=wx.TE_PROCESS_ENTER)
-        self.combobox_in.Bind(wx.EVT_TEXT, self.event_handler_combobox)
+        self.combobox_in.Bind(wx.EVT_CHOICE, self.event_handler_combobox)
         self.combobox_out.Bind(wx.EVT_TEXT, self.event_handler_combobox)
         cb_in_sizer = wx.BoxSizer()
         cb_in_sizer.Add(wx.StaticText(self, -1, "In:", style=wx.ALIGN_CENTER), 0, wx.EXPAND | wx.ALL, 5)
@@ -97,7 +97,7 @@ class WxPanelNetlist(wx.Panel):
     def load_state(self):
         self.txt_spice.ChangeValue(self.root.app_state.netlist) # do not trigger EVT_TEXT
         self.txt_spice_optimized.ChangeValue(self.root.app_state.netlist_optimized)  # do not trigger EVT_TEXT
-        self.combobox_in.ChangeValue(self.root.app_state.inexpr)
+        self.combobox_in.SetSelection(self.combobox_in.FindString(self.root.app_state.inexpr))
         self.combobox_out.ChangeValue(self.root.app_state.outexpr)
         wx.CallAfter(self.event_handler_btn_parse_solve, None)
 
@@ -137,7 +137,7 @@ class WxPanelNetlist(wx.Panel):
         if self.worker_lock.locked():
             assert(0)  # ComboBoxes are disabled while solving so should never be called
 
-        self.root.app_state.inexpr = self.combobox_in.GetValue()
+        self.root.app_state.inexpr = self.combobox_in.GetString(self.combobox_in.GetSelection())
         self.root.app_state.outexpr = self.combobox_out.GetValue()
 
         # Input & output expressions only affect solver, not parser
@@ -289,7 +289,7 @@ class WxPanelNetlist(wx.Panel):
         outexpr_bak = self.root.app_state.outexpr
 
         # Workaround: Need to unbind before .Clear() because .Clear() activates the event
-        self.combobox_in.Unbind(wx.EVT_TEXT)
+        self.combobox_in.Unbind(wx.EVT_CHOICE)
         self.combobox_out.Unbind(wx.EVT_TEXT)
 
         self.combobox_out.Clear()
@@ -329,7 +329,7 @@ class WxPanelNetlist(wx.Panel):
             if len(input_exprs) != 0 and len(inexpr_bak) == 0:
                 self.root.app_state.inexpr = input_exprs[0]
 
-        self.combobox_in.ChangeValue(self.root.app_state.inexpr)
+        self.combobox_in.SetSelection(self.combobox_in.FindString(self.root.app_state.inexpr))
 
-        self.combobox_in.Bind(wx.EVT_TEXT, self.event_handler_combobox)
+        self.combobox_in.Bind(wx.EVT_CHOICE, self.event_handler_combobox)
         self.combobox_out.Bind(wx.EVT_TEXT, self.event_handler_combobox)

@@ -201,6 +201,9 @@ class WxPanelPoleZero(wx.Panel):
             if p[0] in self.row_types:
                 self.add_row(p[0], p[1], p[2])
 
+        self.my_grid.SelectRow(self.sel_row)
+        self.my_grid.SelectCol(self.sel_col)
+
         # Call update_callback from parent window to update all UI
         self.root.update_callback()
 
