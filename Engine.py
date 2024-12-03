@@ -1044,8 +1044,12 @@ class Engine:
                 makeup_gain_db = 0
 
             h_vec = self.h_lambd(*x)  # asterisk=unpack elements of list and pass them as separate parameters
-            b_optimized = np.vstack((20 * np.log10(np.abs(h_vec)),
-                                        np.unwrap(np.angle(h_vec)) * 180 / np.pi))
+            if self.app_state.magnitude_in_dB:
+                b_optimized = np.vstack((20 * np.log10(np.abs(h_vec)),
+                                            np.unwrap(np.angle(h_vec)) * 180 / np.pi))
+            else:
+                b_optimized = np.vstack((np.abs(h_vec),
+                                         np.unwrap(np.angle(h_vec)) * 180 / np.pi))
 
             residues = []
 
@@ -1285,7 +1289,10 @@ class Engine:
             return None
 
         # Handle case with no poles and no zeros (just gain)
-        if type(h_vec) != list:
-            h_vec = h_vec * np.ones_like(f_vec)
+        #if type(h_vec) != list:
+        #    h_vec = h_vec * np.ones_like(f_vec)
 
-        return np.vstack((20 * np.log10(np.abs(h_vec)), np.unwrap(np.angle(h_vec)) * 180 / np.pi))
+        if self.app_state.magnitude_in_dB:
+            return np.vstack((20 * np.log10(np.abs(h_vec)), np.unwrap(np.angle(h_vec)) * 180 / np.pi))
+        else:
+            return np.vstack((np.abs(h_vec), np.unwrap(np.angle(h_vec)) * 180 / np.pi))

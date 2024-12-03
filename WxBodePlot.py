@@ -142,101 +142,52 @@ class WxBodePlot(wx.Panel):
         event.Skip()
 
     def setup(self):
-        self.setup_done = True
+        self.fig.clear()
 
         # Setup mag axes
         self.ax_mag = self.fig.add_subplot(211)
-        # self.ax_mag.set_title('Magnitude')
-        self.ax_mag.set(xlabel='Frequency [Hz]', ylabel='Magnitude [dB]')
         self.setup_xaxis(self.ax_mag)
 
-        self.ax_mag.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(20.0))
-        self.ax_mag.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10.0))
+        if self.root.app_state.magnitude_in_dB:
+            self.ax_mag.set(xlabel='Frequency [Hz]', ylabel='Magnitude [dB]')
+            #self.ax_mag.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(20.0))
+            self.ax_mag.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(nbins=10, steps=[2, 4, 6]))
+            self.ax_mag.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10.0))
+            self.ax_mag.yaxis.set_major_formatter(matplotlib.ticker.ScalarFormatter())
+        else:
+            self.ax_mag.set(xlabel='Frequency [Hz]', ylabel='Magnitude [linear]')
+            self.ax_mag.yaxis.set_major_locator(matplotlib.ticker.AutoLocator())
+            self.ax_mag.yaxis.set_major_formatter(matplotlib.ticker.EngFormatter(unit='', sep=''))
 
         # Setup ph axes
         self.ax_ph = self.fig.add_subplot(212)
-        # self.ax_ph.set_title('Phase')
         self.ax_ph.set(xlabel='Frequency [Hz]', ylabel='Phase [deg]')
         self.setup_xaxis(self.ax_ph)
 
         self.ax_ph.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(45.0))
         self.ax_ph.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(15.0))
 
-        #self.fig.tight_layout()
+        self.fig.tight_layout()
+        self.setup_done = True
 
-    def clear_axis(self,ax):
-        for line in ax.get_lines():
+    def clear(self):
+        for line in self.ax_mag.get_lines():
             line.remove()
-        ax.set_prop_cycle(None)
-
-    # def plot_original(self, f_vec: np.ndarray, original: np.ndarray):
-    #     with self.lock:
-    #         if self.line_original_mag is not None:
-    #             self.line_original_mag.set_xdata(f_vec)
-    #             self.line_original_mag.set_ydata(original[0, :])
-    #         if self.line_original_ph is not None:
-    #             self.line_original_ph.set_xdata(f_vec)
-    #             self.line_original_ph.set_ydata(original[1, :])
-
-    # def plot(self, f_vec: np.ndarray, original: np.ndarray or None, optimized: np.ndarray or None, target: np.ndarray or None):
-    #     with self.lock:
-    #         if not self.setup_done:
-    #             self.setup()
-    #
-    #         self.clear_axis(self.ax_mag)
-    #         self.clear_axis(self.ax_ph)
-    #
-    #         self.f_vec = f_vec
-    #         self.ax_mag.set_xlim(left=self.f_vec[0], right=self.f_vec[-1])
-    #         self.ax_ph.set_xlim(left=self.f_vec[0], right=self.f_vec[-1])
-    #
-    #         # Plot original
-    #         if original is not None:
-    #             self.line_original_mag = \
-    #                 self.ax_mag.plot(self.f_vec, original[0, :], self.root.app_state.linestyle_original,
-    #                              color=self.root.app_state.linecolor_original, label='Original')
-    #             self.line_original_ph = \
-    #                 self.ax_ph.plot(self.f_vec, original[1, :], self.root.app_state.linestyle_original,
-    #                             color=self.root.app_state.linecolor_original, label='Original')
-    #
-    #         if target is not None:
-    #             self.line_target_mag = \
-    #                 self.ax_mag.plot(self.f_vec, target[0,:], self.root.app_state.linestyle_target,
-    #                              color=self.root.app_state.linecolor_target, label='Target')
-    #             self.line_target_ph = \
-    #                 self.ax_ph.plot(self.f_vec, target[1,:], self.root.app_state.linestyle_target,
-    #                             color=self.root.app_state.linecolor_target, label='Target')
-    #
-    #         if optimized is not None:
-    #             self.line_optimized_mag = \
-    #                 self.ax_mag.plot(self.f_vec, optimized[0,:], self.root.app_state.linestyle_optimized,
-    #                              color=self.root.app_state.linecolor_optimized, label='Optimized')
-    #             self.line_optimized_ph = \
-    #                 self.ax_ph.plot(self.f_vec, optimized[1,:],  self.root.app_state.linestyle_optimized,
-    #                             color=self.root.app_state.linecolor_optimized, label='Optimized')
-    #
-    #         # Comment this?
-    #         #self.ax_mag.autoscale(enable=True, axis='y')
-    #         #self.ax_ph.autoscale(enable=True, axis='y')
-    #         self.finish_plot()
+        self.ax_mag.set_prop_cycle(None)
+        for line in self.ax_ph.get_lines():
+            line.remove()
+        self.ax_ph.set_prop_cycle(None)
 
     def finish_plot(self):
-        self.ax_mag.relim()
-        self.ax_mag.autoscale_view(scalex=False, scaley=True)
-        self.ax_ph.relim()
-        self.ax_ph.autoscale_view(scalex=False, scaley=True)
-        self.ax_mag.legend(loc="upper right")
-
-        #self.fig.canvas.draw_idle() # this runs the plotter in another thread, doesnt work when you use a thread for the optimization
-        self.fig.suptitle("Transfer function " + self.root.app_state.outexpr + "/" + self.root.app_state.inexpr)
         self.fig.tight_layout()
-        self.fig.canvas.draw()  # draw must be used when calling from optimization, with the locks there
+        self.fig.canvas.draw_idle() # this runs the plotter in another thread, also works.
+        #self.fig.canvas.draw()
         self.Update()
 
-    def plot_line(self, name: str, f_vec: np.ndarray, data: np.ndarray):
+    def plot_line(self, name: str, f_vec: np.ndarray, data: np.ndarray, do_setup=False):
         assert not self.lock.locked()
         with self.lock:
-            if not self.setup_done:
+            if do_setup or not self.setup_done:
                 self.setup()
 
             # Find line with label matching 'name' and update the X and Y data
@@ -262,7 +213,22 @@ class WxBodePlot(wx.Panel):
                     self.ax_ph.plot(f_vec, data[1, :], self.root.app_state["linestyle_"+name.lower()],
                                     color=self.root.app_state["linecolor_"+name.lower()], label=name)
 
-            # Rearranges axis limits, calls tight_layout and draws plot
+            # Rearrange axes limits
+            self.ax_mag.relim()
+            self.ax_mag.autoscale_view(scalex=False, scaley=True)
+            self.ax_ph.relim()
+            self.ax_ph.autoscale_view(scalex=False, scaley=True)
+
+            # Call tight_layout and draws plot
+            self.ax_mag.legend(loc="upper right")
+
+            tf_str = ""
+
+            if self.root.app_state.outexpr and self.root.app_state.inexpr:
+                if self.root.app_state.outexpr != "" and self.root.app_state.inexpr != "":
+                    tf_str = self.root.app_state.outexpr + "/" + self.root.app_state.inexpr
+
+            self.fig.suptitle("Transfer function " + tf_str)
             self.finish_plot()
 
     def setup_xaxis(self, ax):

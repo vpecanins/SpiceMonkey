@@ -1,7 +1,9 @@
 import wx
 from WxDialogOptimSettings import WxDialogOptimSettings
 from WxDialogOptimRanges import WxDialogOptimRanges
+from Examples import examples
 import os
+from AppState import AppState
 
 class WxMainMenu(wx.MenuBar):
 
@@ -19,7 +21,7 @@ class WxMainMenu(wx.MenuBar):
             self.root.Bind(wx.EVT_MENU, callback, d[key])
 
     def menu_checkitem(self, m: wx.Menu, d: dict, key: str, label: str, status_label: str,
-                  wxid=None, enable=True):
+                  wxid=None, enable=True, extra_callback=None):
         if wxid is None:
             wxid = wx.NewIdRef(1)
         d[key] = m.Append(wxid, label, status_label, kind=wx.ITEM_CHECK)
@@ -31,9 +33,30 @@ class WxMainMenu(wx.MenuBar):
         # Use the menu key as name for the parameter in app_state
         def callback(e):
             self.root.app_state.__setattr__(key, d[key].IsChecked())
+            if callable(extra_callback):
+                extra_callback()
             e.Skip()
 
         self.root.Bind(wx.EVT_MENU, callback, d[key])
+
+    def menu_examples_item(self, m: wx.Menu, d: dict, key: str, label: str, status_label: str,
+                     wxid=None, enable=True):
+        if wxid is None:
+            wxid = wx.NewIdRef(1)
+        d[key] = m.Append(wxid, label, status_label)
+
+        if not enable:
+            d[key].Enable(False)
+
+        def callback(e):
+            for k, val in examples[key].items():
+                self.root.app_state[k] = val
+            self.root.app_state["netlist_optimized"] = ""
+            self.root.load_all_states()
+            e.Skip()
+
+        if callback is not None:
+            self.root.Bind(wx.EVT_MENU, callback, d[key])
 
     def __init__(self, root):
         super().__init__()
@@ -105,8 +128,10 @@ class WxMainMenu(wx.MenuBar):
         self.menu_item(optimMenu, self.optimItem, "stop", 'Stop\tEsc', 'Stop optimization', wx.ID_STOP,
                        self.optim_run, enable=False)
         optimMenu.AppendSeparator()
-        self.menu_checkitem(optimMenu, self.optimItem, "log_transform", 'Log transform',
-                       'Enable or disable log-transform on the parameters', None)
+        self.menu_checkitem(optimMenu, self.optimItem, "log_transform", 'Log search',
+                       'Enable or disable logarithmic search of the parameters', None)
+        self.menu_checkitem(optimMenu, self.optimItem, "magnitude_in_dB", 'Magnitude in dB',
+                            'Use dB or linear scale for magnitude', None, extra_callback=self.optim_magnitude_in_dB)
         self.menu_checkitem(optimMenu, self.optimItem, "optimize_mag", 'Optimize magnitude',
                        'Enable or disable magnitude response optimization', None)
         self.menu_checkitem(optimMenu, self.optimItem, "optimize_phase", 'Optimize phase',
@@ -130,12 +155,12 @@ class WxMainMenu(wx.MenuBar):
         self.menu_item(helpMenu, self.helpItem, "about", "About...", "About SpiceMonkey", wx.ID_ABOUT, self.about)
 
         # submenu for menuitem
-        imp = wx.Menu()
-        imp.Append(wx.ID_ANY, 'SubMenu 1')
-        imp.Append(wx.ID_ANY, 'SubMenu 2')
-        imp.Append(wx.ID_ANY, 'SubMenu 3')
+        examplesMenu = wx.Menu()
+        self.examplesItem = {}
+        for k in examples.keys():
+            self.menu_examples_item(examplesMenu, self.examplesItem, k, k, k, wx.ID_ANY)
 
-        helpMenu.Append(wx.ID_ANY, "Examples", imp)
+        helpMenu.Append(wx.ID_ANY, "Examples", examplesMenu)
 
         self.Append(helpMenu, '&Help')
 
@@ -150,8 +175,26 @@ class WxMainMenu(wx.MenuBar):
         root.SetMenuBar(self)
 
     def file_new(self, e):
-        self.root.app_state._json_file = ""
+
+        # Check for unsaved changes
+        if self.root.app_state._unsaved:
+            ret = wx.MessageBox(self.root.app_state._json_file + " has unsaved changes.\nWould you like to save them?",
+                                "Unsaved changes",
+                                wx.ICON_QUESTION | wx.YES_NO | wx.CANCEL | wx.YES_DEFAULT)
+            if ret == wx.YES:
+                self.file_save(None)
+            elif ret == wx.NO:
+                pass
+            else:
+                return
+
+        self.root.app_state.__init__()
+        self.root.engine.__init__(self.root.app_state, self.root.engine.callback)
+        self.root.app_state._json_file = "new file"
         self.set_window_title()
+        self.root.load_all_states()
+
+
     def set_window_title(self):
         if self.root.app_state._json_file == "":
             self.root.SetTitle("*new file - SpiceMonkey")
@@ -166,21 +209,11 @@ class WxMainMenu(wx.MenuBar):
             else:
                 self.root.SetTitle(rpath + " - SpiceMonkey")
 
-    def optim_logtransform(self, e):
-        self.root.app_state.log_transform =  self.optimItem[1].IsChecked()
-        self.root.app_state.save(self.root.app_state._json_file)
-    
-    def optim_phase(self, e):
-        self.root.app_state.optimize_phase =  self.optimItem[2].IsChecked()
-        self.root.app_state.save(self.root.app_state._json_file)
-    
-    def optim_gain(self, e):
-        self.root.app_state.makeup_gain =  self.optimItem[3].IsChecked()
-        self.root.app_state.save(self.root.app_state._json_file)
-    
-    def optim_subs_before(self, e):
-        self.root.app_state.subs_before_solve =  self.optimItem[4].IsChecked()
-        self.root.app_state.save(self.root.app_state._json_file)
+    def optim_magnitude_in_dB(self):
+        # TODO Must find way to replot "unselected" netlist
+        self.root.engine.b_initial = None
+        self.root.engine.b_optimized = None
+        self.root.update_plots(do_setup=True)
 
     def optim_settings(self, e):
         self.dialog_settings.load_state()
@@ -193,12 +226,6 @@ class WxMainMenu(wx.MenuBar):
     def load_state(self):
         for key, el in self.check_items.items():
             el.Check(self.root.app_state[key])
-      #  self.optimItem[2].Check(self.root.app_state.log_transform)
-      #  self.optimItem[3].Check(self.root.app_state.optimize_mag)
-      #  self.optimItem[4].Check(self.root.app_state.optimize_phase)
-      #  self.optimItem[5].Check(self.root.app_state.optimize_reg)
-      #  self.optimItem[6].Check(self.root.app_state.makeup_gain)
-      #  self.optimItem[7].Check(self.root.app_state.subs_before_solve)
         self.dialog_settings.load_state()
 
     def file_open(self, e):

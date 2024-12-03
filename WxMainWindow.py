@@ -87,23 +87,25 @@ class WxMainWindow(wx.Frame):
         self.parent.ExitMainLoop()
         self.Destroy()
 
-    def update_callback(self):
+    def update_plots(self, do_setup=False):
         #print("Update callback")
         self.engine.get_target_freqresponse()
-        self.panel_bodeplot.plot_line("Target", self.engine.f_vec, self.engine.b_target)
+        self.panel_bodeplot.plot_line("Target", self.engine.f_vec, self.engine.b_target, do_setup)
 
         if self.engine.output_expr_initial is not None:
             self.engine.get_initial_freqresponse()
-            if self.panel_netlist.selected_tab == 0:
+            if self.panel_netlist.parsed_tab == 0:
                 self.panel_bodeplot.plot_line("Original", self.engine.f_vec, self.engine.b_initial)
             else:
                 self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, self.engine.b_initial)
 
     def load_all_states(self):
         # Called by menu when opening state file
-        self.panel_netlist.load_state()
         self.panel_polezero.load_state()
+        self.engine.__init__(self.app_state, self.callback_engine)
+        self.update_plots(do_setup=True)
         self.menubar.load_state()
+        self.panel_netlist.load_state()
 
     def callback_engine(self, engine: Engine, s: str):
         # This callback is called by engine thread
@@ -115,61 +117,85 @@ class WxMainWindow(wx.Frame):
     def callback_engine_thread_event(self, event):
 
         # Print all status messages in status bar
+        # If the status_msg has multiple lines, only print the first one in the status bar
         if hasattr(event, "status_msg"):
             if event.status_msg != "":
-                self.statusbar.SetStatusText(event.status_msg)
+                self.statusbar.SetStatusText(event.status_msg.split('\n')[0])
 
         # For certain status messages, change things in the GUI
         if hasattr(event, "event_type"):
             if event.event_type == "parser_ok":
                 self.panel_netlist.fill_combos()
-                self.panel_netlist.enable_parse_solve(True, True)
-                self.panel_netlist.enable_optimize(False, settings=True, stop=False)
+                self.enable_parse_solve(True, True)
+                self.enable_optimize(False, settings=True, stop=False)
 
             elif event.event_type == "parser_error":
-                self.panel_netlist.enable_parse_solve(True, False)
-                self.panel_netlist.enable_optimize(False, settings=True, stop=False)
+                self.enable_parse_solve(True, False)
+                self.enable_optimize(False, settings=True, stop=False)
 
             elif event.event_type == "parser_ok_solving":
                 # Do not update combos here, as user might be typing some in/out expression not valid yet
-                self.panel_netlist.enable_parse_solve(False, False)
-                self.panel_netlist.enable_optimize(False, settings=True, stop=False)
+                self.panel_netlist.fill_combos()
+                #self.enable_parse_solve(False, False)
+                #self.enable_optimize(False, settings=True, stop=False)
 
             elif event.event_type == "solver_ok":
                 self.panel_netlist.fill_combos()
-                self.update_callback()
-                self.panel_netlist.enable_parse_solve(True, True)
-                self.panel_netlist.enable_optimize(True, settings=True, stop=False)
-
-            elif event.event_type == "solver_ok_optimizing":
-                self.panel_netlist.fill_combos()
-                self.update_callback()
-                self.panel_netlist.enable_parse_solve(False, False)
-                self.panel_netlist.enable_optimize(False, settings=False, stop=True)
+                self.update_plots()
+                self.enable_parse_solve(True, True)
+                self.enable_optimize(True, settings=True, stop=False)
 
             elif event.event_type == "solver_error":
-                self.update_callback()
-                self.panel_netlist.enable_parse_solve(True, True)
-                self.panel_netlist.enable_optimize(False, settings=True, stop=False)
+                self.update_plots()
+                self.enable_parse_solve(True, True)
+                self.enable_optimize(False, settings=True, stop=False)
 
             elif event.event_type == "optim_step":
                 self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, self.engine.b_optimized)
-                self.app_state.netlist_optimized = self.engine.generate(event.optimized_vals)
+                self.app_state.netlist_optimized = self.engine.generate(self.engine.optimized_vals)
                 self.panel_netlist.txt_spice_optimized.ChangeValue(self.app_state.netlist_optimized)
 
             elif event.event_type == "optim_ok":
-                self.panel_netlist.enable_parse_solve(True, True)
-                self.panel_netlist.enable_optimize(True, settings=True, stop=False)
-                self.panel_netlist.selected_tab = 1
+                self.enable_parse_solve(True, True)
+                self.enable_optimize(True, settings=True, stop=False)
+                self.panel_netlist.parsed_tab = 1
                 self.engine.get_optimized_freqresponse()
                 self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, self.engine.b_optimized)
 
             elif event.event_type == "optim_cancelled":
-                self.panel_netlist.enable_parse_solve(True, True)
-                self.panel_netlist.enable_optimize(True, settings=True, stop=False)
-                self.panel_netlist.selected_tab = 1
+                self.enable_parse_solve(True, True)
+                self.enable_optimize(True, settings=True, stop=False)
+                self.panel_netlist.parsed_tab = 1
 
             elif event.event_type == "optim_error":
-                self.panel_netlist.enable_parse_solve(True, True)
-                self.panel_netlist.enable_optimize(True, settings=True, stop=False)
-                self.panel_netlist.selected_tab = 1
+                self.enable_parse_solve(True, True)
+                self.enable_optimize(True, settings=True, stop=False)
+                self.panel_netlist.parsed_tab = 1
+
+    def enable_parse_solve(self, enable=False, combos=False):
+        # Called whenever we need to enable or disable gui elements for parse/solve
+        self.panel_netlist.btn_parse_solve.Enable(enable)
+        self.panel_netlist.combobox_out.Enable(combos)
+        self.panel_netlist.combobox_in.Enable(combos)
+        self.panel_netlist.root.menubar.netlistItem["parse"].Enable(enable)
+        self.menubar.netlistItem["subs_before_solve"].Enable(enable)
+
+    def enable_optimize(self, enable=False, settings=False, stop=False):
+        if stop:
+            self.panel_netlist.btn_optimize.SetLabel("Stop")
+            self.menubar.optimItem["stop"].Enable(True)
+        else:
+            self.panel_netlist.btn_optimize.SetLabel("Optimize")
+            self.menubar.optimItem["stop"].Enable(False)
+        self.panel_netlist.btn_optimize.Enable(enable or stop)
+        self.panel_netlist.btn_copy_optimized.Enable(enable)
+        self.menubar.optimItem["run"].Enable(enable)
+        self.menubar.optimItem["log_transform"].Enable(settings)
+        self.menubar.optimItem["magnitude_in_dB"].Enable(settings)
+        self.menubar.optimItem["optimize_mag"].Enable(settings)
+        self.menubar.optimItem["optimize_phase"].Enable(settings)
+        self.menubar.optimItem["optimize_reg"].Enable(settings)
+        self.menubar.optimItem["makeup_gain"].Enable(settings)
+        self.menubar.optimItem["ranges"].Enable(settings)
+        self.menubar.optimItem["settings"].Enable(settings)
+        self.panel_polezero.enable(settings)

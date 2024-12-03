@@ -12,7 +12,6 @@ class WxPanelPoleZero(wx.Panel):
         super().__init__(parent)
         
         # Main window can be accessed from here
-        self.app_state = root.app_state
         self.root = root
 
         # Grid
@@ -150,30 +149,30 @@ class WxPanelPoleZero(wx.Panel):
         self.label_slider_max.Enable(enable)
 
     def internal_update_callback(self):
-        self.app_state.freqmin = eng2num(self.txt_fmin.GetLineText(0))
-        self.app_state.freqmax = eng2num(self.txt_fmax.GetLineText(0))
-        self.app_state.npoints = eng2num(self.txt_npoints.GetLineText(0))
-        self.app_state.magnitude = eng2num(self.txt_magnitude.GetLineText(0))
-        self.app_state.phase = eng2num(self.txt_phase.GetLineText(0))
+        self.root.app_state.freqmin = eng2num(self.txt_fmin.GetLineText(0))
+        self.root.app_state.freqmax = eng2num(self.txt_fmax.GetLineText(0))
+        self.root.app_state.npoints = eng2num(self.txt_npoints.GetLineText(0))
+        self.root.app_state.magnitude = eng2num(self.txt_magnitude.GetLineText(0))
+        self.root.app_state.phase = eng2num(self.txt_phase.GetLineText(0))
 
-        if math.isnan(self.app_state.freqmin):
+        if math.isnan(self.root.app_state.freqmin):
             return
 
-        if math.isnan(self.app_state.freqmax):
+        if math.isnan(self.root.app_state.freqmax):
             return
 
-        if math.isnan(self.app_state.npoints):
+        if math.isnan(self.root.app_state.npoints):
             return
 
-        if math.isnan(self.app_state.magnitude):
+        if math.isnan(self.root.app_state.magnitude):
             return
 
-        if math.isnan(self.app_state.phase):
+        if math.isnan(self.root.app_state.phase):
             return
 
         nrows = self.my_grid.GetNumberRows()
 
-        self.app_state.pztable = []
+        self.root.app_state.pztable = []
         for n in range(0, nrows):
             rt = self.my_grid.GetCellValue(n, 0)
             w0 = eng2num(self.my_grid.GetCellValue(n, 1))
@@ -181,31 +180,32 @@ class WxPanelPoleZero(wx.Panel):
                 q = eng2num(self.my_grid.GetCellValue(n, 2))
             else:
                 q = 1
-            self.app_state.pztable.append([rt, w0, q])
+            self.root.app_state.pztable.append([rt, w0, q])
 
         # Call update_callback from parent window to update all UI
-        self.root.update_callback()
+        self.root.update_plots()
 
     def load_state(self):
-        self.txt_fmin.SetValue(num2eng(self.app_state.freqmin))
-        self.txt_fmax.SetValue(num2eng(self.app_state.freqmax))
-        self.txt_npoints.SetValue(num2eng(self.app_state.npoints))
-        self.txt_magnitude.SetValue(num2eng(self.app_state.magnitude))
-        self.txt_phase.SetValue(num2eng(self.app_state.phase))
+        self.txt_fmin.SetValue(num2eng(self.root.app_state.freqmin))
+        self.txt_fmax.SetValue(num2eng(self.root.app_state.freqmax))
+        self.txt_npoints.SetValue(num2eng(self.root.app_state.npoints))
+        self.txt_magnitude.SetValue(num2eng(self.root.app_state.magnitude))
+        self.txt_phase.SetValue(num2eng(self.root.app_state.phase))
 
+        # First delete all rows
         nrows = self.my_grid.GetNumberRows()
         if nrows != 0:
             self.my_grid.DeleteRows(0, nrows)
 
-        for p in self.app_state.pztable:
+        # Load all new rows
+        for p in self.root.app_state.pztable:
             if p[0] in self.row_types:
                 self.add_row(p[0], p[1], p[2])
 
-        self.my_grid.SelectRow(self.sel_row)
-        self.my_grid.SelectCol(self.sel_col)
-
-        # Call update_callback from parent window to update all UI
-        self.root.update_callback()
+        nrows = self.my_grid.GetNumberRows()
+        if self.sel_row < nrows:
+            self.my_grid.SelectRow(self.sel_row)
+            self.my_grid.SelectCol(self.sel_col)
 
     def add_row(self, row_type: str, freq: float, q: float):
         self.my_grid.AppendRows(1)
@@ -233,14 +233,18 @@ class WxPanelPoleZero(wx.Panel):
 
     # When Add button is clicked
     def callback_add(self, event):
-        sel = self.my_grid.GetSelectedRows()
-        if sel:
-            sel = sel[-1]
-        else:
-            if self.sel_row is not None:
-                sel = self.sel_row
+        nrows = self.my_grid.GetNumberRows()
+        if nrows > 0:
+            sel = self.my_grid.GetSelectedRows()
+            if sel:
+                sel = sel[-1]
             else:
-                sel = self.my_grid.GetNumberRows() - 1
+                if self.sel_row is not None:
+                    sel = self.sel_row
+                else:
+                    sel = self.my_grid.GetNumberRows() - 1
+        else:
+            sel = 0
 
         if sel > 0:
             rt = self.my_grid.GetCellValue(sel, 0)  # Previous row selected
@@ -248,7 +252,7 @@ class WxPanelPoleZero(wx.Panel):
             q0 = eng2num(self.my_grid.GetCellValue(sel, 2))
         else:
             rt = self.row_types[0]  # Pole real
-            f0 = math.sqrt(self.app_state.freqmin * self.app_state.freqmax)
+            f0 = math.sqrt(self.root.app_state.freqmin * self.root.app_state.freqmax)
             q0 = 1
 
         n = self.add_row(rt, f0, q0)
@@ -334,7 +338,7 @@ class WxPanelPoleZero(wx.Panel):
 
     def enable_disable_q(self, row):
         if "pair" in self.my_grid.GetCellValue(row, 0):
-            self.my_grid.SetCellValue(row, 2, num2eng(self.app_state.pztable[row][2]))
+            self.my_grid.SetCellValue(row, 2, num2eng(self.root.app_state.pztable[row][2]))
             self.my_grid.SetReadOnly(row, 2, False)
         else:
             self.my_grid.SetCellValue(row, 2, "")

@@ -26,13 +26,14 @@ class AppState(dict):
 
         self["freqmin"] = 1
         self["freqmax"] = 1e9
-        self["npoints"] = 60
-        self["magnitude"] = 1e3
+        self["npoints"] = 30
+        self["magnitude"] = 1
         self["phase"] = 0
+        self["magnitude_in_dB"] = True
         self["log_transform"] = True
         self["subs_before_solve"] = True
-        self["ftol"] = 1e-19
-        self["xtol"] = 1e-19
+        self["ftol"] = 1e-15
+        self["xtol"] = 1e-15
         self["gtol"] = 1e-8
         self["diff_step"] = 1e-3
         self["max_nfev"] = 1000
@@ -41,9 +42,9 @@ class AppState(dict):
         self["weight_phase"] = 0.01
         self["weight_reg"] = 0.01
 
-        self["linestyle_original"] = "o"
+        self["linestyle_original"] = ".-"
         self["linecolor_original"] = "green"
-        self["linestyle_target"] = "o"
+        self["linestyle_target"] = ".-"
         self["linecolor_target"] = "blue"
         self["linestyle_optimized"] = ".-"
         self["linecolor_optimized"] = "orange"
@@ -51,7 +52,7 @@ class AppState(dict):
         self["magnitude_log"] = True
 
         self["optimize_mag"] = True
-        self["optimize_phase"] = False
+        self["optimize_phase"] = True
         self["makeup_gain"] = True
         self["makeup_gain_min"] = 0.01
         self["makeup_gain_max"] = 100
