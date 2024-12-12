@@ -42,9 +42,9 @@ class AppState(dict):
         self["weight_phase"] = 0.01
         self["weight_reg"] = 0.01
 
-        self["linestyle_original"] = ".-"
+        self["linestyle_original"] = ".--"
         self["linecolor_original"] = "green"
-        self["linestyle_target"] = ".-"
+        self["linestyle_target"] = ".--"
         self["linecolor_target"] = "blue"
         self["linestyle_optimized"] = ".-"
         self["linecolor_optimized"] = "orange"
@@ -67,12 +67,15 @@ class AppState(dict):
         self["maxval"] = {"R": 1e9,  "L": 1,    "C": 1,      "E": 1e6,  "F": 1e6,  "G": 1e6,  "H": 1e6, "K": 1}
         self["parse_while_typing"] = True
         self["solve_while_typing"] = True
+        self["simplify_after_solve"] = False
 
         # These attributes are not dumped into the JSON file
         # This is handled manually in the save_state function
         self._unsaved = False
         self._json_file = "state.json"
         self._modified_callback = None
+        self._batch_mode = False
+        self._debug = False
 
     def __getattr__(self, name):
         try:
@@ -140,12 +143,21 @@ class AppState(dict):
         self.pop("_unsaved")
         self.pop("_json_file")
         callback_bak = self.pop("_modified_callback")
+        batch_mode_bak = self.pop("_batch_mode")
+        debug_bak = self.pop("_debug")
+
+        # Save serialized object using JSON library
         with open(filename, "w") as file:
             json.dump(self, fp=file, indent=4, skipkeys=True)
             file.flush()
+
         # Manually recover fields that we removed before
         self._unsaved = False
         self._json_file = filename
         self._modified_callback = callback_bak
+        self._batch_mode = batch_mode_bak
+        self._debug = debug_bak
+
+        # Callback to indicate app_state has been saved
         if callable(self._modified_callback):
             self._modified_callback()

@@ -1,3 +1,5 @@
+import time
+
 from matplotlib.figure import Figure
 import matplotlib
 import threading
@@ -113,6 +115,8 @@ class WxBodePlot(wx.Panel):
         self.root = root
 
         self.f_vec = [self.root.app_state.freqmin, self.root.app_state.freqmax]  # Just for initialization
+        self.ax_mag = None
+        self.ax_ph = None
 
         self.fig = plt.figure(dpi=dpi, figsize=(3, 2))
         self.canvas = FigureCanvas(self, -1, self.fig)
@@ -121,20 +125,15 @@ class WxBodePlot(wx.Panel):
         sizer = wx.BoxSizer(wx.VERTICAL)
         sizer.Add(self.canvas, 1, wx.EXPAND)
         self.SetSizer(sizer)
-        
+
+        # Plotting functions can be called from at least two threads
+        # (main thread and worker thread during optimization_step)
+        # So we need a lock
         self.lock = threading.Lock()
         self.setup_done = False
 
         # Skip focus, otherwise it catches Ctrl+S which should be caught by the main menu
         self.canvas.Bind(wx.EVT_SET_FOCUS, self.on_set_focus, self.canvas)
-
-        # Lines of plots
-        self.line_original_mag = None
-        self.line_original_ph = None
-        self.line_target_mag = None
-        self.line_target_ph = None
-        self.line_optimized_mag = None
-        self.line_optimized_ph = None
 
     def on_set_focus(self, event):
         # Workaround: Avoid getting the focus
@@ -150,7 +149,6 @@ class WxBodePlot(wx.Panel):
 
         if self.root.app_state.magnitude_in_dB:
             self.ax_mag.set(xlabel='Frequency [Hz]', ylabel='Magnitude [dB]')
-            #self.ax_mag.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(20.0))
             self.ax_mag.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(nbins=10, steps=[2, 4, 6]))
             self.ax_mag.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10.0))
             self.ax_mag.yaxis.set_major_formatter(matplotlib.ticker.ScalarFormatter())
@@ -177,6 +175,14 @@ class WxBodePlot(wx.Panel):
         for line in self.ax_ph.get_lines():
             line.remove()
         self.ax_ph.set_prop_cycle(None)
+
+    def clear_line(self, name: str):
+        for line in self.ax_mag.get_lines():
+            if line.get_label() == name:
+                line.remove()
+        for line in self.ax_ph.get_lines():
+            if line.get_label() == name:
+                line.remove()
 
     def finish_plot(self):
         self.fig.tight_layout()

@@ -152,15 +152,18 @@ class WxMainMenu(wx.MenuBar):
 
         helpMenu = wx.Menu()
         self.helpItem = {}
-        self.menu_item(helpMenu, self.helpItem, "about", "About...", "About SpiceMonkey", wx.ID_ABOUT, self.about)
 
-        # submenu for menuitem
+        # Examples submenu
         examplesMenu = wx.Menu()
         self.examplesItem = {}
         for k in examples.keys():
             self.menu_examples_item(examplesMenu, self.examplesItem, k, k, k, wx.ID_ANY)
 
         helpMenu.Append(wx.ID_ANY, "Examples", examplesMenu)
+
+        # Other help menus
+        self.menu_checkitem(helpMenu, self.helpItem, "_debug", 'Print debug messages', 'Print debug messages', None)
+        self.menu_item(helpMenu, self.helpItem, "about", "About...", "About SpiceMonkey", wx.ID_ABOUT, self.about)
 
         self.Append(helpMenu, '&Help')
 
@@ -191,6 +194,8 @@ class WxMainMenu(wx.MenuBar):
         self.root.app_state.__init__()
         self.root.engine.__init__(self.root.app_state, self.root.engine.callback)
         self.root.app_state._json_file = "new file"
+        self.root.h_original = None
+        self.root.h_optimized = None
         self.set_window_title()
         self.root.load_all_states()
 
@@ -210,9 +215,6 @@ class WxMainMenu(wx.MenuBar):
                 self.root.SetTitle(rpath + " - SpiceMonkey")
 
     def optim_magnitude_in_dB(self):
-        # TODO Must find way to replot "unselected" netlist
-        self.root.engine.b_initial = None
-        self.root.engine.b_optimized = None
         self.root.update_plots(do_setup=True)
 
     def optim_settings(self, e):

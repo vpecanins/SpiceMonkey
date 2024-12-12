@@ -10,13 +10,11 @@ class WxPanelNetlist(wx.Panel):
         super().__init__(parent)
         self.parser_solver_called_while_typing = False
         self.root = root
-        self.parent = parent
         self.engine = root.engine
 
         self.worker_thread = None
         self.worker_lock = threading.Lock()
         self.changed_flag = []
-        self.enable_print_debug = True
         self.parsed_tab = 0
 
         # In/out combo boxes
@@ -93,7 +91,7 @@ class WxPanelNetlist(wx.Panel):
         self.SetSizer(sizer)
 
     def debug_print(self, o, end=None):
-        if self.enable_print_debug:
+        if self.root.app_state._debug:
                 print("[GUI DEBUG] " + str(o).replace("\n", "\n[GUI DEBUG] "), end=end)
 
     def load_state(self):

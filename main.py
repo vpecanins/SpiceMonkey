@@ -1,4 +1,5 @@
 import wx
+import sys
 
 from WxMainWindow import WxMainWindow
 from Engine import Engine
@@ -36,6 +37,8 @@ if __name__ == '__main__':
                 exit()
     else:
         app_state = AppState()
+        app_state._debug = args.verbose
+        app_state._batch_mode = args.batch
 
         if args.batch:
             if args.statefile == "":
@@ -47,11 +50,50 @@ if __name__ == '__main__':
 
                     print("Loaded statefile '%s'." % args.statefile)
 
-                    # TODO create engine here and process data in batch mode
+                    def engine_callback(s, event_type):
+                        pass
+
+                    # Create engine and launch steps in batch mode
+                    engine = Engine(app_state, engine_callback)
+
+                    # Parse netlist
+                    parser_status = engine.parse(app_state.netlist)
+
+                    if parser_status:
+                        # Parser completed successfully, call solver
+                        solver_status = engine.solve()
+
+                        if solver_status:
+                            # Solver completed successfully
+                            # Call optimizer
+                            optimize_status = engine.optimize()
+
+                            if optimize_status:
+                                print("Optimization finished")
+                                print()
+                                print("Original netlist:")
+                                print(app_state.netlist)
+                                print()
+                                print("Optimized netlist:")
+                                print(app_state.netlist_optimized)
+                                print()
+                                sys.exit(0)
+                            else:
+                                print("Optimization error.")
+                                sys.exit(3)
+
+                        else:
+                            # Solver error
+                            print("Solver error: " + engine.error_msg)
+                            sys.exit(2)
+                    else:
+                        # Parser error
+                        print("Parser error: " + engine.error_msg)
+                        sys.exit(1)
 
                 except IOError:
                     print("Cannot open file '%s'." % args.statefile)
-                    exit()
+                    sys.exit(1)
         else:
             print("Starting WxWidgets version: " + str(wx.version()))
 

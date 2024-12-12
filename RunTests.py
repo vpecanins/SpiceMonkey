@@ -192,9 +192,11 @@ def run_test(test_name: str, enable_plot=True, debug=False):
         print("[DEBUG] Error running spicemonkey solver")
         return -1
 
-    engine.get_initial_freqresponse()
+    # The solved circuit frequency response is in h_initial
+    f_vec = engine.get_f_axis()
+    b_initial = engine.get_freqresponse(engine.h_initial)
 
-    M_spicemonkey = np.transpose(np.row_stack((engine.f_vec, engine.b_initial)))
+    M_spicemonkey = np.transpose(np.vstack((f_vec, b_initial)))
 
     if not skip_ngspice:
         error = np.power(np.sum(np.power(M_spicemonkey - M_ngspice, 2)), 0.5) / np.sqrt(M_spicemonkey.size-1)

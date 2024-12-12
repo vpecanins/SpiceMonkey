@@ -8,7 +8,7 @@ from typing import Callable
 from sympy.parsing.sympy_parser import parse_expr
 from AppState import AppState
 
-import sys
+import sys, os
 #sys.path.insert(0, "/home/peca/Repos/scipy-leastsquares-callback-new/build-install/lib/python3/dist-packages")
 #from scipy.optimize import least_squares
 
@@ -73,10 +73,9 @@ class Engine:
         self.status_msg = ""
 
         # Debug message (Internal algorithm data) as string
-        # Printed in the console only if enable_print_debug is True
+        # Printed in the console only if app_state._debug is True
         # debug_msg can be multiple lines
         self.debug_msg = ""
-        self.enable_print_debug = True
 
         self.nodes = ["0"]  # Node names, starting by GND node. So we have len(self.nodes)-1 nodes to be solved
         self.branches = None  # Branch currents to be solved
@@ -125,7 +124,7 @@ class Engine:
         self.f_vec = None
         self.b_target = None
         self.b_initial = None
-        self.b_optimized = None
+        self.b_step = None
         self.last_A_solved = None   # Last circuit matrix that was inverted, to skip inversion if we can
         self.stop_flag = False
         self.callback = callback
@@ -138,10 +137,10 @@ class Engine:
         self.iteration = None
         self.n = None
         self.resnorm = None
-        self.h_lambd = None
-        self.h_optim = None
+        self.h_compiled = None
+        self.h_final = None
         self.output_expr = None
-        self.output_expr_initial = None
+        self.h_initial = None
 
         self.syntax_strings = {
             "R": "Rnnn <node+> <node-> <val>",
@@ -159,7 +158,7 @@ class Engine:
 
     def debug_print(self, s: str, end=None):
         self.error_msg = s
-        if self.enable_print_debug:
+        if self.app_state._debug:
             print("[DEBUG] " + s.replace("\n", "\n[DEBUG] "), end=end)
 
     def info_print(self, s: str, event_type = "", end=None):
@@ -195,6 +194,18 @@ class Engine:
         return self.branches.index(s.upper())
 
     def parse(self, netlist: str):
+        """
+        Parse SPICE netlist and build problem matrices.
+
+        Arguments:
+            netlist (str): A SPICE-like netlist to be parsed.
+
+        Returns:
+            True, if parsing was successful.
+            False, if the netlist contains any errors.
+            The location and type of error is printed using self.error_print.
+        """
+
         self.nodes = ["0"]
         self.branches = []
         self.netlist_fields = {}
@@ -324,6 +335,14 @@ class Engine:
 
             self.elems_line[f[0].upper()] = idx
             self.netlist_fields[f[0].upper()] = f
+
+        if len(self.sym) == 0:
+            self.error_print("parse: netlist contains no elements")
+            return False
+
+        if len(self.nodes) < 2:
+            self.error_print("parse: netlist contains no nodes")
+            return False
 
         # Interpret val as fixed, initial or expression-based
         for key, val in self.elems_val.items():
@@ -767,10 +786,14 @@ class Engine:
 
             self.info_print("solve: solving matrix finished ({:.2f}s)".format(time.time() - start_time))
 
-            self.info_print("solve: simplification, this may take some time... ")
-            start_time = time.time()
-            self.X = sp.simplify(sp.Matrix(X))
-            self.info_print("solve: simplification finished ({:.2f}s)".format(time.time() - start_time))
+            # Simplify solution if enabled (can take more time than solving!)
+            if self.app_state.simplify_after_solve:
+                self.info_print("solve: simplification, this may take some time... ")
+                start_time = time.time()
+                self.X = sp.simplify(sp.Matrix(X))
+                self.info_print("solve: simplification finished ({:.2f}s)".format(time.time() - start_time))
+            else:
+                self.X = sp.Matrix(X)
 
             # Save last one solved to see if we need to solve it again on the future
             self.last_A_solved = A
@@ -791,33 +814,51 @@ class Engine:
             self.output_expr = self.output_expr.subs(self.sym[key], el)
 
         # Substitute everything in case "substitute before solving" or current output was not selected
+        # Substitute variables that are zero
         for key in subs_zero:
             self.output_expr = sp.simplify(self.output_expr.subs(self.sym[key], 0))
 
+        # Substitute fixed component values
         for key, el in self.elems_fixed.items():
             self.output_expr = self.output_expr.subs(self.sym[key], el)
 
-        # Initial xfer fcn handling
-        self.output_expr_initial = self.output_expr
-        for key, el in self.elems_initial.items():
-            self.output_expr_initial = self.output_expr_initial.subs(self.sym[key], el)
-
+        # Collect terms together as coefficients of s variable.
         self.output_expr = sp.collect(self.output_expr, self.s)
 
+        # Create symbolic expression for initial transfer function
+        self.h_initial = self.output_expr
+
+        # Substitute initial component values
+        for key, el in self.elems_initial.items():
+            self.h_initial = self.h_initial.subs(self.sym[key], el)
+
         self.debug_print("Input expression:")
-        self.debug_print(sp.pretty(self.sym[ self.app_state.inexpr.upper()], wrap_line=False, num_columns=2000))
+        self.debug_print(sp.pretty(self.sym[self.app_state.inexpr.upper()], wrap_line=False, num_columns=2000))
+        self.debug_print("")
 
         self.debug_print("Output expression:")
         self.debug_print(sp.pretty(self.output_expr, wrap_line=False, num_columns=2000))
+        self.debug_print("")
 
-        self.debug_print("Output expression initial:")
-        self.debug_print(sp.pretty(self.output_expr_initial, wrap_line=False, num_columns=2000))
+        self.debug_print("Initial transfer function:")
+        self.debug_print(sp.pretty(self.h_initial, wrap_line=False, num_columns=2000))
+        self.debug_print("")
+
+        for sym in list(self.h_initial.free_symbols):
+            if sym != self.s:
+                self.error_print("solve: incomplete substitution")
+                return False
 
         return True
 
     def handle_output_expr(self):
-        # Check if self.app_state.outexpr is valid, and construct output_expression
-        # If not valid, return None.
+        """ Check if self.app_state.outexpr is valid and return symbolic expression
+
+        Returns:
+            None, if self.app_state.outexpr is not valid
+            Symbolic expression, if self.app_state.outexpr is valid
+
+        """
 
         idx1, idx2, gg = self.validate_output_expr()
 
@@ -831,11 +872,10 @@ class Engine:
                 return sp.cancel(self.X[idx1] * gg / self.sym[self.app_state.inexpr.upper()])
             else:
                 return sp.cancel((self.X[idx1] / self.sym[self.app_state.inexpr.upper()] -
-                                    self.X[idx2] / self.sym[self.app_state.inexpr.upper()] * gg))
+                                  self.X[idx2] / self.sym[self.app_state.inexpr.upper()] * gg))
 
     def validate_output_expr(self):
-        # Determine if output expression is valid, and return the rows of the solution vector
-        # needed to build the output expression.
+        """ Determine if output expression is valid, and return the rows of the solution vector """
 
         idx1 = None
         idx2 = None
@@ -920,7 +960,6 @@ class Engine:
                             return out_n - 1, None, -gg
                         else:
                             return out_p - 1, out_n - 1,  gg
-
             return idx1, idx2, gg
 
     def get_list_input_output_expressions(self):
@@ -956,50 +995,13 @@ class Engine:
         return input_exprs, output_exprs
 
 
-    ################################################################################################################
+        ################################################################################################################
 
-    ################################################################################################################
+        ################################################################################################################
 
-    ################################################################################################################
+        ################################################################################################################
 
-    ################################################################################################################
-
-    def create_lambda(self):
-
-        self.x_initial = []
-        self.x_min = []
-        self.x_max = []
-        self.names = []
-
-        compsyms = []
-
-        for key, el in self.elems_initial.items():
-            compsyms.append(self.sym[key])
-            self.x_initial.append(el)
-            self.x_min.append(self.minval[key])
-            self.x_max.append(self.maxval[key])
-            self.names.append(key)
-
-        output_expr = self.output_expr
-
-        # Do logarithmic transform
-        if self.app_state.log_transform:
-            for el in compsyms:
-                output_expr = output_expr.subs(el, sp.exp(el))
-            for i, x in enumerate(self.x_initial):
-                self.x_initial[i] = math.log(x)
-            for i, x in enumerate(self.x_min):
-                self.x_min[i] = math.log(x)
-            for i, x in enumerate(self.x_max):
-                self.x_max[i] = math.log(x)
-
-        # Get a big vector that depends on component values
-        lexpr = []
-        for f in self.f_vec:
-            lexpr.append(output_expr.subs(self.s, 2 * sp.pi * 1j * f))
-
-        # Compile sympy function for fast evaluation
-        self.h_lambd = lambdify(compsyms, lexpr, 'numpy')
+        ################################################################################################################
 
     def unpack_x(self, x):
         # Undo log-transform if enabled
@@ -1022,16 +1024,21 @@ class Engine:
 
     def optimize(self):
 
-        def resfun(xin):
+        # Added for batch mode, redundant in GUI mode
+        self.f_vec = self.get_f_axis()
+        self.b_target  = self.get_freqresponse(self.get_h_target())
 
-            # The function that calculates the residues
-            # When called by the least squares algorithm, we use lambda to keep only first return variable
-            # Shape of the residue vector can change depending on which features are enabled:
-            #
-            #  /--------------------------o-------------------------o-----------------------------o-----------------\
-            #  |  mag_residue [npoints]   |  ph_residue [npoints]   |  regulariz. [residues_reg]  | makeup_gain [1] |
-            #  \--------------------------o-------------------------o-----------------------------o-----------------/
-            #
+        def resfun(xin):
+            """
+            Called by optimization on each iteration to calculate the residues.
+
+            Also called by outfun to calculate the frequency response at each step (b_step)
+
+            When called by the least squares algorithm, we use lambda to keep only first return variable.
+
+            Shape of the residue vector can change depending on which features are enabled:
+                mag_residue[npoints], ph_residue[npoints], regularization[residues_reg], makeup_gain[1]
+            """
 
             if self.app_state.makeup_gain:
                 x = xin[0:-1]
@@ -1043,28 +1050,31 @@ class Engine:
                 x = xin
                 makeup_gain_db = 0
 
-            h_vec = self.h_lambd(*x)  # asterisk=unpack elements of list and pass them as separate parameters
+            # asterisk=unpack elements of list and pass them as separate parameters
+            h_vec = self.h_compiled(*x)
+
+            # Calculate frequency response (b_step)
             if self.app_state.magnitude_in_dB:
-                b_optimized = np.vstack((20 * np.log10(np.abs(h_vec)),
-                                            np.unwrap(np.angle(h_vec)) * 180 / np.pi))
+                b_step = np.vstack((20 * np.log10(np.abs(h_vec)),
+                                         np.unwrap(np.angle(h_vec)) * 180 / np.pi))
             else:
-                b_optimized = np.vstack((np.abs(h_vec),
+                b_step = np.vstack((np.abs(h_vec),
                                          np.unwrap(np.angle(h_vec)) * 180 / np.pi))
 
             residues = []
 
             # Magnitude optimization
             if self.app_state.optimize_mag:
-                residues_mag = b_optimized[0, :] - self.b_target[0, :] + makeup_gain_db
+                residues_mag = b_step[0, :] - self.b_target[0, :] + makeup_gain_db
                 residues = np.concatenate((residues, self.app_state.weight_mag * residues_mag))
 
             # Phase optimization
             if self.app_state.optimize_phase:
-                residues_phase = b_optimized[1, :] - self.b_target[1, :]
+                residues_phase = b_step[1, :] - self.b_target[1, :]
                 residues = np.concatenate((residues, self.app_state.weight_phase * residues_phase))
 
             # Regularization: Minimize difference between optimized and initial value
-            npoints = float(len(b_optimized[0, :]))
+            npoints = float(len(b_step[0, :]))
             if self.app_state.optimize_reg:
                 if self.app_state.makeup_gain:
                     x_initial_nogain = self.x_initial[0:-1]
@@ -1081,12 +1091,13 @@ class Engine:
 
             # Optimization algorithms from SciPy only need the residues,
             # so you need to wrap this function as lambda(x): outfun(x)[0] when passing it to the optimization algorithm
-            # We need b_optimized for plotting to not repeat ourselves
-            return residues, b_optimized
+            # We can use returned b_step for plotting so we do not have to repeat the code elsewhere
+            return residues, b_step
 
         def outfun(intermediate_result: OptimizeResult):
-            # This gets called on each iteration of the least squares algorithm to plot the
-            # intermediate results
+            """
+            Called on each iteration of the optimizaton to plot the intermediate results
+            """
 
             self.iteration = intermediate_result.nit
             if hasattr(intermediate_result, "cost"):
@@ -1095,19 +1106,21 @@ class Engine:
                 self.resnorm = np.sqrt(np.sum(np.power(intermediate_result.fun, 2)))
 
             self.optimized_vals, self.makeup_gain = self.unpack_x(intermediate_result.x)
-            self.n, self.b_optimized = resfun(intermediate_result.x)
+            self.n, self.b_step = resfun(intermediate_result.x)
 
-            self.info_print("optimize: step " + str(self.iteration) + ": resnorm={:.2f}".format(self.resnorm),
+            # Print make-up gain if enabled
+            str_makeup = " makeup_gain: {:.2f}".format(self.makeup_gain) if self.app_state.makeup_gain else ""
+
+            self.info_print("optimize: step " + str(self.iteration) +
+                            ": resnorm={:.2f}".format(self.resnorm) + str_makeup,
                             event_type="optim_step")
 
             # Print values on each iteration
-            if self.enable_print_debug:
+            if self.app_state._debug:
                 s = ""
                 for key, val in self.optimized_vals.items():
                     s = s + key + "=" + num2eng(val, ndigits=3) + ", "
                 s = s[0:-2]  # Remove last comma
-                if self.app_state.makeup_gain:
-                    s = s + ", makeup_gain=" + str(self.makeup_gain)
                 self.debug_print(s)
 
             # Check if the stop flag is set to cancel ongoing optimization
@@ -1117,11 +1130,43 @@ class Engine:
                 return True
             else:
                 # This is to avoid the UI becoming unresponsive
-                time.sleep(0.5)
+                if not self.app_state._batch_mode:
+                    time.sleep(0.5)
                 return False
 
-        # Compile sympy expression into a lambda function for fast evaluation
-        self.create_lambda()
+        # Prepare initial vectors to call optimization function
+        self.x_initial = []
+        self.x_min = []
+        self.x_max = []
+        self.names = []
+        h_compiled_syms = []
+
+        for key, el in self.elems_initial.items():
+            h_compiled_syms.append(self.sym[key])
+            self.x_initial.append(el)
+            self.x_min.append(self.minval[key])
+            self.x_max.append(self.maxval[key])
+            self.names.append(key)
+
+        # Do logarithmic transform
+        h_compiled_expr = self.output_expr.copy()
+        if self.app_state.log_transform:
+            for el in h_compiled_syms:
+                h_compiled_expr = h_compiled_expr.subs(el, sp.exp(el))
+            for i, x in enumerate(self.x_initial):
+                self.x_initial[i] = math.log(x)
+            for i, x in enumerate(self.x_min):
+                self.x_min[i] = math.log(x)
+            for i, x in enumerate(self.x_max):
+                self.x_max[i] = math.log(x)
+
+        # Get a big vector that depends on component values
+        h_compiled_vec = []
+        for f in self.f_vec:
+            h_compiled_vec.append(h_compiled_expr.subs(self.s, 2 * sp.pi * 1j * f))
+
+        # Compile sympy function for fast evaluation
+        self.h_compiled = lambdify(h_compiled_syms, h_compiled_vec, 'numpy')
 
         # If make up gain is enabled, add initial, max and min to the vectors
         if self.app_state.makeup_gain:
@@ -1147,7 +1192,6 @@ class Engine:
                                     max_nfev=self.app_state.max_nfev, diff_step=self.app_state.diff_step,
                                     callback=outfun)
             elif self.app_state.optim_method == "differential_evolution":
-
                 res = differential_evolution(func=lambda x: np.sum(np.power(resfun(x)[0], 2)),
                                              x0 = self.x_initial,
                                              bounds=Bounds(lb=self.x_min, ub=self.x_max),
@@ -1158,40 +1202,45 @@ class Engine:
 
             self.optimized_vals, self.makeup_gain = self.unpack_x(res.x)
 
-            self.h_optim = self.output_expr.copy()
+            self.h_final = self.output_expr.copy()
 
             for key, val in self.optimized_vals.items():
-                self.h_optim = self.h_optim.subs(self.sym[key], val)
+                self.h_final = self.h_final.subs(self.sym[key], val)
 
-            self.h_optim = sp.simplify(self.h_optim)
+            self.h_final = sp.simplify(self.h_final)
 
             if res.success:
-                self.info_print("optimize: " + res.message, event_type="optim_ok")
-                if self.app_state.makeup_gain:
-                    self.debug_print("Makeup_gain=" + str(self.makeup_gain))
+                str_makeup = " makeup_gain: {:.2f}".format(self.makeup_gain) if self.app_state.makeup_gain else ""
+                self.info_print("optimize: " + res.message + str_makeup, event_type="optim_ok")
                 self.debug_print("Optimized transfer function:")
-                self.debug_print(sp.pretty(self.h_optim, wrap_line=False, num_columns=2000))
+                self.debug_print(sp.pretty(self.h_final, wrap_line=False, num_columns=2000))
+                return True
             else:
                 self.info_print("optimize: stopped", event_type="optim_cancelled")
+                return True
 
         except Exception as error:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
             self.error_print("optimize: " + str(error), event_type="optim_error")
+            return False
 
-    #######################################################################################
+        #######################################################################################
 
-    #######################################################################################
+        #######################################################################################
 
-    #######################################################################################
+        #######################################################################################
 
-    #######################################################################################
+        #######################################################################################
 
     def get_f_axis(self):
         return np.logspace(np.log10(self.app_state.freqmin),
                            np.log10(self.app_state.freqmax),
                            int(self.app_state.npoints))
 
-    def get_xferfcn_expression(self):
-        # Build and return SymPy expression for the transfer fcn
+    def get_h_target(self):
+        """Build and return symbolic expression for the target transfer function"""
 
         if self.app_state.phase == 0:
             s = str(self.app_state.magnitude)
@@ -1232,19 +1281,19 @@ class Engine:
 
         return parse_expr(s)
 
-    def get_target_freqresponse(self):
+    def compute_target_freqresponse(self):  # Only used in update_plots
         self.f_vec = self.get_f_axis()
-        self.b_target = self.get_freqresponse(self.get_xferfcn_expression())
+        self.b_target = self.get_freqresponse(self.get_h_target())
 
-    def get_initial_freqresponse(self):
-        self.f_vec = self.get_f_axis()
-        self.b_initial = self.get_freqresponse(self.output_expr_initial)
-
-    def get_optimized_freqresponse(self):
-        self.f_vec = self.get_f_axis()
-        self.b_optimized = self.get_freqresponse(self.h_optim)
 
     def get_freqresponse(self, h_sym):
+        """
+        Evaluate a symbolic expression over a frequency range.
+
+        Returns:
+            A matrix with two rows. First row is the magnitude (in dB or linear)
+            and second row the unwrapped phase in degrees.
+        """
 
         f_vec = self.get_f_axis()
 
@@ -1256,17 +1305,17 @@ class Engine:
             h_vec = np.ones_like(f_vec)
         elif isinstance(h_sym, sp.Float):
             if float(h_sym) == 0:
-                self.error_print("get_freqresponse: h_sym is zero")
-                return None
-            else:
-                h_vec = np.ones_like(f_vec) * float(h_sym)
+                if self.app_state.magnitude_in_dB:
+                    self.error_print("get_freqresponse: transfer function is zero and magnitude is in dB")
+                    return None
+            h_vec = np.ones_like(f_vec) * float(h_sym)
         elif isinstance(h_sym, sp.Expr):
             if len(h_sym.free_symbols) == 0:
                 if complex(h_sym) == 0:
-                    self.error_print("get_freqresponse: h_sym is zero")
-                    return None
-                else:
-                    h_vec = complex(h_sym) * np.ones_like(f_vec)
+                    if self.app_state.magnitude_in_dB:
+                        self.error_print("get_freqresponse: transfer function is zero and magnitude is in dB")
+                        return None
+                h_vec = complex(h_sym) * np.ones_like(f_vec)
             else:
                 h_lambd = lambdify(self.s, h_sym, 'numpy')
                 h_vec = h_lambd(2 * np.pi * 1j * f_vec)
