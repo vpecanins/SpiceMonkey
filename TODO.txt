@@ -1,22 +1,22 @@
 TODO
 - Add examples to the Help/Examples menu
-- Try other least squares engines (ceres)
 - Debug behavior of Original/Optimized netlist text boxes
 - Implement case sensitivity in netlist
 - Regularization: Use "original" instead of "initial"
 - Find a GUI way to display the resulting transfer functions
 - Add GUI options under Figure menu to change colors and linespecs of plots
-- Split Engine class that is too big
-    - Split functions into files but not into different classes
-    - See how this is done in other Python projects (eg. Scipy)
 
 Future additions:
 - Schematic editor
 - Nonlinear DC analysis
 - Linear NOISE analysis
+- Try other least squares engines (ceres)
 - Simple BJT, MOSFET & Diode models (DC nonlinear, AC linear)
 - Filter design tool (poles & zeros from Butterworth, Chebychev and others)
 - CTDSM loop filter design tool
 - Transient analysis (nonlinear)
     - Combine it with simple "discrete event simulator" to avoid having to implement variable timestep
     - Figure out a framework to specify optimization goals for transient simulation
+- Split Engine class that is too big
+    - Split functions into files but not into different classes
+    - See how this is done in other Python projects (eg. Scipy)

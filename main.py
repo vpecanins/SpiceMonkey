@@ -12,7 +12,7 @@ import argparse
 if __name__ == '__main__':
 
     arg_parser = argparse.ArgumentParser(
-        description="A self-contained Python tool to simulate and optimize AC electrical circuits.")
+        description="A self-contained circuit analysis and optimization toolbox.")
     arg_parser.add_argument('-b', '--batch', help='Run in batch mode without GUI', action='store_true')
     arg_parser.add_argument('-t', '--test', help='Run tests', action='store_true')
     arg_parser.add_argument('-v', '--verbose', help='Print all debug messages', action='store_true')

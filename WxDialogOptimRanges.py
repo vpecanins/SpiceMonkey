@@ -34,6 +34,7 @@ class WxDialogOptimRanges(wx.Dialog):
             "F": "Current controlled current source (CCCS)",
             "G": "Voltage controlled current source (VCCS)",
             "H": "Current controlled voltage source (CCVS)",
+            "T": "Ideal Transformer"
         }
 
         self.texts_min = {}

@@ -52,31 +52,31 @@ class WxPanelPoleZero(wx.Panel):
         self.labels.append(wx.StaticText(self, -1, "Freq min:", style=wx.ALIGN_CENTER))
         btn_sizer[0].Add(self.labels[-1], 1, wx.EXPAND | wx.ALL, 1)
         self.txt_fmin = wx.TextCtrl(self, -1, style=wx.TE_CENTER | wx.TE_PROCESS_ENTER)
-        self.txt_fmin.Bind(wx.EVT_TEXT_ENTER, lambda e: self.internal_update_callback())
+        self.txt_fmin.Bind(wx.EVT_TEXT_ENTER, lambda e: self.textbox_callback())
         btn_sizer[0].Add(self.txt_fmin, 1, wx.EXPAND | wx.ALL, 1)
 
         self.labels.append(wx.StaticText(self, -1, "Freq max:", style=wx.ALIGN_CENTER))
         btn_sizer[1].Add(self.labels[-1], 1, wx.EXPAND | wx.ALL, 1)
         self.txt_fmax = wx.TextCtrl(self, -1, style=wx.TE_CENTER | wx.TE_PROCESS_ENTER)
-        self.txt_fmax.Bind(wx.EVT_TEXT_ENTER, lambda e: self.internal_update_callback())
+        self.txt_fmax.Bind(wx.EVT_TEXT_ENTER, lambda e: self.textbox_callback())
         btn_sizer[1].Add(self.txt_fmax, 1, wx.EXPAND | wx.ALL, 1)
 
         self.labels.append(wx.StaticText(self, -1, "N points:", style=wx.ALIGN_CENTER))
         btn_sizer[2].Add(self.labels[-1], 1, wx.EXPAND | wx.ALL, 1)
         self.txt_npoints = wx.TextCtrl(self, -1, style=wx.TE_CENTER | wx.TE_PROCESS_ENTER)
-        self.txt_npoints.Bind(wx.EVT_TEXT_ENTER, lambda e: self.internal_update_callback())
+        self.txt_npoints.Bind(wx.EVT_TEXT_ENTER, lambda e: self.textbox_callback())
         btn_sizer[2].Add(self.txt_npoints, 1, wx.EXPAND | wx.ALL, 1)
 
         self.labels.append(wx.StaticText(self, -1, "Magnitude:", style=wx.ALIGN_CENTER))
         btn_sizer[3].Add(self.labels[-1], 1, wx.EXPAND | wx.ALL, 1)
         self.txt_magnitude = wx.TextCtrl(self, -1, style=wx.TE_CENTER | wx.TE_PROCESS_ENTER)
-        self.txt_magnitude.Bind(wx.EVT_TEXT_ENTER, lambda e: self.internal_update_callback())
+        self.txt_magnitude.Bind(wx.EVT_TEXT_ENTER, lambda e: self.textbox_callback())
         btn_sizer[3].Add(self.txt_magnitude, 1, wx.EXPAND | wx.ALL, 1)
 
         self.labels.append(wx.StaticText(self, -1, "Phase:", style=wx.ALIGN_CENTER))
         btn_sizer[4].Add(self.labels[-1], 1, wx.EXPAND | wx.ALL, 1)
         self.txt_phase = wx.TextCtrl(self, -1, style=wx.TE_CENTER | wx.TE_PROCESS_ENTER)
-        self.txt_phase.Bind(wx.EVT_TEXT_ENTER, lambda e: self.internal_update_callback())
+        self.txt_phase.Bind(wx.EVT_TEXT_ENTER, lambda e: self.textbox_callback())
         btn_sizer[4].Add(self.txt_phase, 1, wx.EXPAND | wx.ALL, 1)
 
         # Bottom buttons
@@ -95,8 +95,8 @@ class WxPanelPoleZero(wx.Panel):
         ############################################################
         self.sign = 1
         self.decade = 1
-        self.sel_row = None
-        self.sel_col = None
+        self.sel_row = 0
+        self.sel_col = 0
         self.nticks = 500
         self.roundpos = 100
 
@@ -148,7 +148,10 @@ class WxPanelPoleZero(wx.Panel):
         self.label_slider_min.Enable(enable)
         self.label_slider_max.Enable(enable)
 
-    def internal_update_callback(self):
+    def textbox_callback(self):
+        # Called when text boxes are changed
+        # Might affect plot axis limits so it needs to be redrawn
+
         self.root.app_state.freqmin = eng2num(self.txt_fmin.GetLineText(0))
         self.root.app_state.freqmax = eng2num(self.txt_fmax.GetLineText(0))
         self.root.app_state.npoints = eng2num(self.txt_npoints.GetLineText(0))
@@ -183,7 +186,26 @@ class WxPanelPoleZero(wx.Panel):
             self.root.app_state.pztable.append([rt, w0, q])
 
         # Call update_callback from parent window to update all UI
-        self.root.update_plots()
+        self.root.update_plots(do_setup=True)
+
+    def cell_callback(self):
+        # Called when poles/zeros are changed
+        # Does not change plot axis limits, no need to setup axis again
+
+        nrows = self.my_grid.GetNumberRows()
+
+        self.root.app_state.pztable = []
+        for n in range(0, nrows):
+            rt = self.my_grid.GetCellValue(n, 0)
+            w0 = eng2num(self.my_grid.GetCellValue(n, 1))
+            if "pair" in rt:
+                q = eng2num(self.my_grid.GetCellValue(n, 2))
+            else:
+                q = 1
+            self.root.app_state.pztable.append([rt, w0, q])
+
+        # Call update_callback from parent window to update all UI
+        self.root.update_plots(do_setup=False)
 
     def load_state(self):
         self.txt_fmin.SetValue(num2eng(self.root.app_state.freqmin))
@@ -259,7 +281,7 @@ class WxPanelPoleZero(wx.Panel):
         self.my_grid.SetGridCursor(n, 1)
         self.my_grid.SelectRow(n)
         self.my_grid.EnableCellEditControl(True)
-        self.internal_update_callback()
+        self.cell_callback()
 
     # When Remove button is clicked
     def callback_remove(self, event):
@@ -279,7 +301,7 @@ class WxPanelPoleZero(wx.Panel):
             self.label_slider_max.SetLabel("   ")
             self.label_slider_min.SetLabel("   ")
 
-        self.internal_update_callback()
+        self.cell_callback()
 
     # Only known working way to validate the user input in a WxPython GridCellTextEditor
     # Because wx.Validator doesn't seem to work and there's no examples
@@ -334,7 +356,7 @@ class WxPanelPoleZero(wx.Panel):
 
     def evt_release_slider(self, event):
         self.set_slider()
-        self.internal_update_callback()
+        self.cell_callback()
 
     def enable_disable_q(self, row):
         if "pair" in self.my_grid.GetCellValue(row, 0):
@@ -354,5 +376,5 @@ class WxPanelPoleZero(wx.Panel):
 
         self.set_slider()
 
-        self.internal_update_callback()
+        self.cell_callback()
 

@@ -153,7 +153,7 @@ class WxBodePlot(wx.Panel):
             self.ax_mag.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10.0))
             self.ax_mag.yaxis.set_major_formatter(matplotlib.ticker.ScalarFormatter())
         else:
-            self.ax_mag.set(xlabel='Frequency [Hz]', ylabel='Magnitude [linear]')
+            self.ax_mag.set(xlabel='Frequency [Hz]', ylabel='Magnitude [abs]')
             self.ax_mag.yaxis.set_major_locator(matplotlib.ticker.AutoLocator())
             self.ax_mag.yaxis.set_major_formatter(matplotlib.ticker.EngFormatter(unit='', sep=''))
 

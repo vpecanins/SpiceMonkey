@@ -95,7 +95,7 @@ class Engine:
 
         self.minval = None
         self.maxval = None
-        self.prefix = "x"  # Needed to avoid name clash with SymPy default variables
+        self.prefix = ""  # Might be needed to avoid name clash with SymPy default variables (not needed)
         self.sym = None  # Array of symbols with prefix: self.sym["Vin"] = Symbol(xVin)
         self.optimized_lines = None
         self.lines = None
@@ -103,7 +103,7 @@ class Engine:
         # Problem matrices.
         # Each one a Hybrid matrix:
         # - Node voltages for all nodes of the circuits except GND
-        # - Branch currents for VEHLK elements (Vsources, VCVS, CCVS, inductors & transformers)
+        # - Branch currents for VEHLKT elements (Vsources, VCVS, CCVS, inductors & transformers)
         # - Incidence matrices (for controlled sources, according to MNA stamps)
         #
         # The problem formulation is:
@@ -153,7 +153,8 @@ class Engine:
             "G": "Gnnn <nodeout+> <nodeout-> <nodectl+> <nodectl-> <val>",
             "H": "Hnnn <node+> <node-> <elemctl> <val>",
             "O": "Onnn <nodein+> <nodein-> <nodeout>",
-            "K": "Knnn <inductor1> <inductor2> <val>"
+            "K": "Knnn <inductor1> <inductor2> <val>",
+            "T": "Tnnn <node1+> <node1-> <node2+> <node2-> <val>"
         }
 
     def debug_print(self, s: str, end=None):
@@ -251,14 +252,14 @@ class Engine:
                                  + ": expected " + self.syntax_strings[c])
                 return False
 
-            if c in "RLCVIEFGHOK":
+            if c in "RLCVIEFGHOKT":
                 if len(f) < 4:
                     self.error_print("parse: line " + str(idx+1)
                                      + ": expected " + self.syntax_strings[c])
                     return False
 
                 if c == 'K':
-                    #  Transformer: f[1] and f[2] are names of inductors, no nodes to add here
+                    #  Coupling coefficient: f[1] and f[2] are names of inductors, no nodes to add here
                     self.add_get_branch(f[1])
                     self.add_get_branch(f[2])
                 else:
@@ -273,7 +274,7 @@ class Engine:
                                  + ": unknown circuit element " + str(c))
                 return False
 
-            if c in "EG":  # VCVS and VCCS have (nodep, noden, nc1, nc2)
+            if c in "EGT":  # VCVS and VCCS have (nodep, noden, nc1, nc2), ideal transformer has (n1+, n1-, n2+, n2-)
                 if len(f) < 6:
                     self.error_print("parse: line " + str(idx+1)
                                      + ": expected " + self.syntax_strings[c])
@@ -297,12 +298,16 @@ class Engine:
             if c in "O":  # Opamp f[3] field is the output node
                 self.add_get_node(f[3])
 
+            if c in "T":  # Ideal transformer needs the current of the primary and secondary sides
+                self.add_get_branch(f[0] + "_1")  # Branch current primary side
+                self.add_get_branch(f[0] + "_2")  # Branch current secondary side
+
             # Extract val from netlist
             if c in "RLCK":
                 self.elems_val[f[0].upper()] = f[3]
             elif c in "FH":
                 self.elems_val[f[0].upper()] = f[4]
-            elif c in "EG":
+            elif c in "EGT":
                 self.elems_val[f[0].upper()] = f[5]
             elif c in "VI":
                 i = 3
@@ -373,7 +378,7 @@ class Engine:
                                      + ": invalid value: " + val)
                     return False
 
-                if c in "RLCEFGHK":
+                if c in "RLCEFGHKT":
                     self.elems_fixed[key] = valf
             else:
                 # Element value is not fixed
@@ -384,11 +389,11 @@ class Engine:
                     return False
 
                 self.optimized_lines[self.elems_line[key]] = self.netlist_fields[key]
-                if c in "RLCEFGHK":
+                if c in "RLCEFGHKT":
                     self.elems_initial[key] = valf
 
             # Setup min and max vals
-            if c in "RLCEFGHK":
+            if c in "RLCEFGHKT":
                 # Default min and max values from app_state
                 minval = self.app_state.minval[c]
                 maxval = self.app_state.maxval[c]
@@ -430,8 +435,7 @@ class Engine:
         for key, f in self.netlist_fields.items():
             c = f[0][0].upper()
 
-            # Resistances
-            if c == 'R':
+            if c == 'R':  # Resistors
                 nodep = self.add_get_node(f[1])  # Node already added but we use same logic
                 noden = self.add_get_node(f[2])
 
@@ -470,7 +474,7 @@ class Engine:
                         self.G[nodep - 1, noden - 1] -= inv * g  # Matrix stays symmetric
                         self.G[noden - 1, nodep - 1] -= inv * g
 
-            elif c == 'C':
+            elif c == 'C': # Capacitors
                 nodep = self.add_get_node(f[1])  # Node already added but we use same logic
                 noden = self.add_get_node(f[2])
 
@@ -535,7 +539,7 @@ class Engine:
 
                 inv = -1  # TODO implement inversion for balanced circuits
 
-                # Figure 2.22 from book
+                # Figure 2.22 from book Farid Najm
                 # Correct V(out) & I(Vin) in simplerc
                 if nodep != 0:
                     self.G[nodep - 1, N + index] += 1
@@ -554,7 +558,7 @@ class Engine:
                 if noden != 0:
                     self.M[noden - 1, 0] -= self.sym[key]
 
-            elif c == 'G': # VCCS
+            elif c == 'G':  # VCCS
                 nodep = self.add_get_node(f[1])
                 noden = self.add_get_node(f[2])
                 nc1 = self.add_get_node(f[3])
@@ -568,7 +572,7 @@ class Engine:
                 if noden != 0 and nc2 != 0:
                     self.G[noden - 1, nc2 - 1] += self.sym[key]
 
-            elif c == 'E': # VCVS
+            elif c == 'E':  # VCVS
                 nodep = self.add_get_node(f[1])
                 noden = self.add_get_node(f[2])
                 nc1 = self.add_get_node(f[3])
@@ -585,12 +589,11 @@ class Engine:
                 if nc2 != 0:
                     self.G[N + index, nc2 - 1] += self.sym[key]
 
-            elif c == 'F': # CCCS
+            elif c == 'F':  # CCCS
                 nodep = self.add_get_node(f[1])
                 noden = self.add_get_node(f[2])
                 index_ctl = self.add_get_branch(f[3])  # Branch current used as current sensor
 
-                #self.G[row, column]
                 if nodep != 0:
                     self.G[nodep - 1, N + index_ctl] -= self.sym[key]
                     #self.G[nodep - 1, N + index] -= 1
@@ -603,7 +606,7 @@ class Engine:
                 nodep = self.add_get_node(f[1])
                 noden = self.add_get_node(f[2])
                 index = self.add_get_branch(f[0])   # Current through output vsource
-                index_ctl = self.add_get_branch(f[3]) # Branch used as current sensor
+                index_ctl = self.add_get_branch(f[3])  # Branch used as current sensor
 
                 if nodep != 0:
                     self.G[nodep - 1, N + index] += 1
@@ -614,8 +617,8 @@ class Engine:
 
                 self.G[N + index, N + index_ctl] -= self.sym[key]
 
-            elif c == 'O':
-                nodep = self.add_get_node(f[1])  # Node already added but we use same logic
+            elif c == 'O':  # Ideal Opamp
+                nodep = self.add_get_node(f[1])
                 noden = self.add_get_node(f[2])
                 n3 = self.add_get_node(f[3])
                 index = self.add_get_branch(f[0])
@@ -627,19 +630,51 @@ class Engine:
                 if noden != 0:
                     self.G[N + index, noden - 1] -= 1
 
-            elif c == 'K':
+            elif c == 'K':  # Coupling coefficient between two inductors
                 index1 = self.add_get_branch(f[1])  # First coupled inductor
                 index2 = self.add_get_branch(f[2])  # Second coupled inductor
 
+                # Check if the two coupled inductors exist (must have been parsed before this)
                 if f[1].upper() not in self.sym.keys() or f[2].upper() not in self.sym.keys():
                     self.error_print("parse: line " + str(self.elems_line[f[0].upper()])
                                      + ": inductor not found")
                     return False
 
+                # Calculate mutual inductance = K * sqrt(L1 * L2)
                 mutual_l = self.sym[f[0].upper()] * sp.sqrt(self.sym[f[1].upper()] * self.sym[f[2].upper()])
 
                 self.C[N + index1, N + index2] -= mutual_l
                 self.C[N + index2, N + index1] -= mutual_l
+
+            elif c == 'T':  # Ideal transformer
+                # Source: Circuit Oriented Electromagnetic Modeling Using the PEEC Techniques, First Edition.
+                # Albert E. Ruehli, Giulio Antonini, and Lijun Jiang
+                # https://onlinelibrary.wiley.com/doi/pdf/10.1002/9781119078388.app2
+
+                node1p = self.add_get_node(f[1])  # Positive node primary side
+                node1n = self.add_get_node(f[2])  # Negative node primary side
+                node2p = self.add_get_node(f[3])  # Positive node secondary side
+                node2n = self.add_get_node(f[4])  # Negative node secondary side
+
+                index1 = self.add_get_branch(f[0] + "_1")  # Branch current primary side
+                index2 = self.add_get_branch(f[0] + "_2")  # Branch current secondary side
+
+                # Primary/secondary current ratio
+                self.G[N + index1, N + index1] += 1
+                self.G[N + index1, N + index2] -= self.sym[key]
+
+                if node1p != 0:
+                    self.G[node1p-1, N + index1] += 1
+                    self.G[N + index2, node1p-1] -= self.sym[key]  # Primary/secondary voltage ratio
+                if node1n != 0:
+                    self.G[node1n-1, N + index1] -= 1
+                    self.G[N + index2, node1n-1] += self.sym[key]  # Primary/secondary voltage ratio
+                if node2p != 0:
+                    self.G[node2p-1, N + index2] += 1
+                    self.G[N + index2, node2p-1] += 1  # Primary/secondary voltage ratio
+                if node2n != 0:
+                    self.G[node2n-1, N + index2] -= 1
+                    self.G[N + index2, node2n-1] -= 1  # Primary/secondary voltage ratio
 
             else:
                 self.error_print("parse: unknown component in filling up matrix")
@@ -1149,7 +1184,7 @@ class Engine:
             self.names.append(key)
 
         # Do logarithmic transform
-        h_compiled_expr = self.output_expr.copy()
+        h_compiled_expr = self.output_expr  # .copy() removed
         if self.app_state.log_transform:
             for el in h_compiled_syms:
                 h_compiled_expr = h_compiled_expr.subs(el, sp.exp(el))
@@ -1202,7 +1237,7 @@ class Engine:
 
             self.optimized_vals, self.makeup_gain = self.unpack_x(res.x)
 
-            self.h_final = self.output_expr.copy()
+            self.h_final = self.output_expr  # .copy() removed
 
             for key, val in self.optimized_vals.items():
                 self.h_final = self.h_final.subs(self.sym[key], val)

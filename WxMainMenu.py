@@ -344,6 +344,6 @@ class WxMainMenu(wx.MenuBar):
         self.root.panel_netlist.event_handler_btn_optimize(None)
 
     def about(self, e):
-        ret = wx.MessageBox("SpiceMonkey, A self-contained Python tool to simulate and optimize AC electrical circuits.",
+        ret = wx.MessageBox("SpiceMonkey: A self-contained circuit analysis and optimization toolbox.",
                             "About",
                             wx.ICON_INFORMATION | wx.OK)

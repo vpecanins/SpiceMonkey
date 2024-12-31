@@ -58,16 +58,18 @@ class AppState(dict):
         self["makeup_gain_max"] = 100
         self["optimize_reg"] = True
         self["optim_method"] = "trf"
-        self["pztable"] = []
         self["inexpr"] = ""
         self["outexpr"] = ""
         self["netlist"] = ""
         self["netlist_optimized"] = ""
-        self["minval"] = {"R": 1e-9, "L": 1e-9, "C": 10e-15, "E": 1e-6, "F": 1e-6, "G": 1e-6, "H": 1e-6, "K": 0}
-        self["maxval"] = {"R": 1e9,  "L": 1,    "C": 1,      "E": 1e6,  "F": 1e6,  "G": 1e6,  "H": 1e6, "K": 1}
         self["parse_while_typing"] = True
         self["solve_while_typing"] = True
         self["simplify_after_solve"] = False
+
+        # Attributes that are arrays must be handled  with care
+        self["pztable"] = []
+        self["minval"] = {"R": 1e-9, "L": 1e-9, "C": 10e-15, "E": 1e-6, "F": 1e-6, "G": 1e-6, "H": 1e-6, "K": 0, "T": 0}
+        self["maxval"] = {"R": 1e9,  "L": 1,    "C": 1,      "E": 1e6,  "F": 1e6,  "G": 1e6,  "H": 1e6, "K": 1, "T": 1e6}
 
         # These attributes are not dumped into the JSON file
         # This is handled manually in the save_state function
@@ -131,7 +133,13 @@ class AppState(dict):
             jstr = file.read()
             tempobj = json.loads(jstr)
             for k in tempobj.keys():
-                self[k] = tempobj[k]
+                if isinstance(tempobj[k], dict):
+                    # For dicts, load keys in file and keep defaults if not in file
+                    for m in tempobj[k].keys():
+                        self[k][m] = tempobj[k][m]
+                else:
+                    # For everything else just copy the content from file
+                    self[k] = tempobj[k]
         self._json_file = filename
         self._unsaved = False
         if callable(self._modified_callback):

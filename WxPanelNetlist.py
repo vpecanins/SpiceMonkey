@@ -123,10 +123,12 @@ class WxPanelNetlist(wx.Panel):
     def event_handler_copy_optimized(self, event):
         v = self.txt_spice_optimized.GetValue()
         if v != "":
-            self.txt_spice.SetValue(v)
+            # Select original netlist tab and copy optimized netlist into it
             self.notebook.SetSelection(0)
             self.parsed_tab = 0
-            self.event_handler_text(event)
+
+            # Calls eventually event_handler_text to update plots
+            self.txt_spice.SetValue(v)
 
     def event_handler_notebook(self, event):
         # If optimization is not ongoing, change the current tab
@@ -139,6 +141,7 @@ class WxPanelNetlist(wx.Panel):
             event.Veto()
 
     def update_line_col(self, event):
+        # Update text input line and column in the status bar
         if self.notebook.GetSelection() == 0:
             x, lx, cx = self.txt_spice.PositionToXY(self.txt_spice.GetInsertionPoint())
         else:

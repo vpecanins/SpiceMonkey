@@ -92,7 +92,10 @@ class WxMainWindow(wx.Frame):
         self.Destroy()
 
     def update_plots(self, do_setup=False):
-        #print("Update callback")
+        # Updates the bode plots if the corresponding symbolic expression is not None.
+        # If the symbolic expression is not None, but it cannot compute the frequency response,
+        # because get_freqresponse returns None, update_plots returns False.
+
         self.engine.compute_target_freqresponse()
         if self.engine.b_target is None:
             self.panel_bodeplot.clear_line("Target")
@@ -104,14 +107,22 @@ class WxMainWindow(wx.Frame):
             self.panel_bodeplot.clear_line("Original")
         else:
             b_original = self.engine.get_freqresponse(self.h_original)
-            self.panel_bodeplot.plot_line("Original", self.engine.f_vec, b_original, do_setup)
-            do_setup = False
+            if b_original is None:
+                return False
+            else:
+                self.panel_bodeplot.plot_line("Original", self.engine.f_vec, b_original, do_setup)
+                do_setup = False
 
         if self.h_optimized is None:
             self.panel_bodeplot.clear_line("Optimized")
         else:
             b_optimized = self.engine.get_freqresponse(self.h_optimized)
-            self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, b_optimized, do_setup)
+            if b_optimized is None:
+                return False
+            else:
+                self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, b_optimized, do_setup)
+
+        return True
 
 
     def load_all_states(self):
@@ -162,9 +173,9 @@ class WxMainWindow(wx.Frame):
                 else:
                     self.h_optimized = self.engine.h_initial
 
-                self.update_plots()
+                plot_ok = self.update_plots()
                 self.enable_parse_solve(True, True)
-                self.enable_optimize(True, settings=True, stop=False)
+                self.enable_optimize(plot_ok, settings=True, stop=False)
 
             elif event.event_type == "solver_error":
                 if self.panel_netlist.parsed_tab == 0:
@@ -186,7 +197,7 @@ class WxMainWindow(wx.Frame):
                 self.enable_optimize(True, settings=True, stop=False)
                 self.panel_netlist.parsed_tab = 1
 
-                self.h_optimized = self.engine.h_final.copy()
+                self.h_optimized = self.engine.h_final  # .copy() removed
                 b_optimized = self.engine.get_freqresponse(self.h_optimized)
                 self.panel_bodeplot.plot_line("Optimized", self.engine.f_vec, b_optimized)
                 #self.engine.get_final_freqresponse()
