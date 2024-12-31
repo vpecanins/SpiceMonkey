@@ -73,6 +73,7 @@ equivalent circuit, which is faster because it uses less equations:
 # Setup instructions 
 
 In general:
+0. Open a terminal wherever you want and clone this Git repository.
 1. Install at least Python 3.13 or newer
 2. Install all the required Python libraries: `pip install -r requirements.txt`
 3. Run `python main.py` in your terminal to launch the GUI
