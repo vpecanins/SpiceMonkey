@@ -32,13 +32,19 @@
     "optimize_reg": false,
     "optim_method": "trf",
     "inexpr": "Vin",
-    "outexpr": "V(2)",
-    "netlist": "; Reproduces copy error\nVin 1 0 1 AC 1\nT1 1 0 2 0 0\nR2 2 0 1k\n",
-    "netlist_optimized": "; Reproduces copy error\nVin 1 0 AC 1\nR1 1 2 20K*\nR2 2 3 20K*\nO1 3 4 5\nRg1 4 5 20K*\nRg2 4 0 10K*\nC1 2 5 11.254n\nC2 3 0 22.508n\n",
+    "outexpr": "V(5)",
+    "netlist": "; Second-order Sallen-Key filter\nVin 1 0 AC 1\nR1 1 2 20K*\nR2 2 3 20K*\nEopa1 5 0 3 4 1e4*\nRg1 4 5 44K*\nRg2 4 0 22K*\nC1 2 5 10n\nC2 3 0 20n\n",
+    "netlist_optimized": "; Reproduces copy error\nVin 1 0 AC 1\nR1 1 2 19.685K\nR2 2 3 11.313K\nEopa1 5 0 3 4 1e4*\nRg1 4 5 44K*\nRg2 4 0 22K*\nC1 2 5 10n*\nC2 3 0 47n*\n",
     "parse_while_typing": true,
     "solve_while_typing": true,
     "simplify_after_solve": false,
-    "pztable": [],
+    "pztable": [
+        [
+            "Pole pair",
+            500.0,
+            0.7071
+        ]
+    ],
     "minval": {
         "R": 1.0,
         "L": 1e-09,
