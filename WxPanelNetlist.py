@@ -163,7 +163,7 @@ class WxPanelNetlist(wx.Panel):
         if self.parser_solver_called_while_typing and not self.root.app_state.solve_while_typing:
             pass
         else:
-            outexpr_valid, _, _ = self.engine.validate_output_expr()
+            outexpr_valid = self.engine.build_output_expr()
             if outexpr_valid is not None:
                 # Output expression is valid, call solver
                 self.root.enable_parse_solve(False, False)
@@ -327,7 +327,7 @@ class WxPanelNetlist(wx.Panel):
             self.combobox_in.Append(el)
 
         # Check if current output expression is valid
-        outexpr_valid, _, _ = self.engine.validate_output_expr()
+        outexpr_valid = self.engine.build_output_expr()
 
         if outexpr_valid is not None:
             # The output expression is valid
@@ -348,7 +348,7 @@ class WxPanelNetlist(wx.Panel):
 
         else:
             # The input expression is not valid
-            if len(input_exprs) != 0 and len(inexpr_bak) == 0:
+            if len(input_exprs) != 0:
                 self.root.app_state.inexpr = input_exprs[0]
 
         self.combobox_in.SetSelection(self.combobox_in.FindString(self.root.app_state.inexpr))

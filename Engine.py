@@ -838,7 +838,7 @@ class Engine:
             self.debug_print("\n")
 
         # Handle output expression
-        self.output_expr = self.handle_output_expr()
+        self.output_expr = self.build_output_expr()
 
         if self.output_expr is None:
             # Handle output expression already prints error if needed
@@ -886,7 +886,7 @@ class Engine:
 
         return True
 
-    def handle_output_expr(self):
+    def build_output_expr(self):
         """ Check if self.app_state.outexpr is valid and return symbolic expression
 
         Returns:
@@ -895,107 +895,169 @@ class Engine:
 
         """
 
-        idx1, idx2, gg = self.validate_output_expr()
+        # Validate input expression
+        if self.app_state.inexpr.upper() not in self.sources_dc.keys():
+            if self.app_state.inexpr.upper() not in self.sources_ac.keys():
+                # Input expression is not valid. Will try to get the first V or I source
+                # This needs to be here rather than in the fill_combos, because otherwise, the combos get updated
+                # but the user has to parse again
+                if len(self.sources_dc.keys()) > 0:
+                    self.app_state.inexpr = list(self.sources_dc.keys())[0]
+                elif len(self.sources_ac.keys()) > 0:
+                    self.app_state.inexpr = list(self.sources_ac.keys())[0]
 
-        if idx1 is None:
-            return None
-        else:
-            if gg is None:
-                gg = 1
-
-            if idx2 is None:
-                return sp.cancel(self.X[idx1] * gg / self.sym[self.app_state.inexpr.upper()])
-            else:
-                return sp.cancel((self.X[idx1] / self.sym[self.app_state.inexpr.upper()] -
-                                  self.X[idx2] / self.sym[self.app_state.inexpr.upper()] * gg))
-
-    def validate_output_expr(self):
-        """ Determine if output expression is valid, and return the rows of the solution vector """
-
-        idx1 = None
-        idx2 = None
-        gg = None
+                self.error_print("output_expression: invalid input expression, changing to {}".format(self.app_state.inexpr))
 
         # Output expression handling
-        regex = r"(V|I|v|i)\(([^,]*)(,?.*)\)"
-        matches = re.findall(regex, self.app_state.outexpr)
+        regex = r"([VIZYLC])\(([^,]*)(,?.*)\)"
+        matches = re.findall(regex, self.app_state.outexpr, re.IGNORECASE)
 
         if len(matches) == 0:
-            return None, None, None
-        else:
-            grp = matches[0]
-            if grp[0].upper() == 'V':
-                # Output is a voltage
-                # TODO: If no output node is selected, just select the highest node (on GUI level, not here)
+            return None
 
-                out_p = 0
-                out_n = 0
+        grp = matches[0]
+        if grp[0].upper() == 'V':
+            # Output is a voltage
+            out_p = 0
+            out_n = 0
+            if grp[1] in self.nodes:
+                # Expression has V(node) or V(node+, node-) syntax
+                out_p = self.nodes.index(grp[1])
 
-                if grp[1] in self.nodes:  # Expression has V(node) or V(node+, node-) syntax
-                    out_p = self.nodes.index(grp[1])
-
-                    if len(grp[2]) == 0:
-                        pass
-                    elif len(grp[2]) == 1:
-                        # User entered: V(1,)
-                        return None, None, None
-                    else:
-                        n2 = grp[2][1:]  # Remove initial comma from regex capture group
-                        if n2 in self.nodes:  # V(node+, node-) syntax
-                            out_n = self.nodes.index(n2)
-                        else:
-                            self.error_print("output_expression: V(out_n) node not valid")
-                            return None, None, None
-
-                else:  # Expression has V(component) syntax
-                    if grp[1].upper() in self.netlist_fields:
-                        f = self.netlist_fields[grp[1].upper()]
-                        if f[0][0].upper() in "RLCVIEFGH":
-                            out_p = self.get_node(f[1])
-                            out_n = self.get_node(f[2])
-                        else:
-                            self.error_print("output_expression: V(element) not found")
-                            return None, None, None
-                    else:
-                        self.error_print("output_expression: V(out_p) or V(element) not valid")
-                        return None, None, None
-
-                if out_p == out_n:
-                    self.error_print("output_expression: V(node,node) selected, output is zero")
-                    return None, None, None
-
-                # Return indices
-                if out_n == 0:
-                    return out_p - 1, None, 1
-                elif out_p == 0:
-                    return out_n - 1, None, -1
+                if len(grp[2]) == 0:
+                    # User entered: V(,x)
+                    pass
+                elif len(grp[2]) == 1:
+                    # User entered: V(1,)
+                    return None
                 else:
-                    return out_p - 1, out_n - 1, 1
+                    n2 = grp[2][1:]  # Remove initial comma from regex capture group
+                    if n2 in self.nodes:  # V(node+, node-) syntax
+                        out_n = self.nodes.index(n2)
+                    else:
+                        self.error_print("output_expression: V(out_n) node not valid")
+                        return None
 
-            elif grp[0].upper() == 'I':
-                # Output is a current
-                if grp[1].upper() in self.branches:
-                    # Current is available in vector X directly
-                    return len(self.nodes) - 1 + self.branches.index(grp[1].upper()), None, 1
-                elif grp[1].upper() in self.netlist_fields:
-                    # Current through RC element calculated from voltages and conductance (gg)
+            else:
+                # Expression has V(component) syntax
+                if grp[1].upper() in self.netlist_fields:
                     f = self.netlist_fields[grp[1].upper()]
-                    c = f[0][0].upper()
-                    if c in "RC":
+                    if f[0][0].upper() in "RLCVIEFGH":
                         out_p = self.get_node(f[1])
                         out_n = self.get_node(f[2])
-                        s = sp.parse_expr("s")
+                    else:
+                        self.error_print("output_expression: V(element) not found")
+                        return None
+                else:
+                    self.error_print("output_expression: V(out_p) or V(element) not valid")
+                    return None
 
-                        if c == 'R': gg = 1 / self.sym[grp[1].upper()]  # R
-                        else: gg = s * self.sym[grp[1].upper()]  # C
+            if out_p == out_n:
+                self.error_print("output_expression: V(node,node) selected, output is zero")
+                return None
 
-                        if out_n == 0:
-                            return out_p - 1, None, gg
-                        elif out_p == 0:
-                            return out_n - 1, None, -gg
-                        else:
-                            return out_p - 1, out_n - 1,  gg
-            return idx1, idx2, gg
+            # Return symbolic expression
+            if out_n == 0:
+                # Cancel input expression from output expression
+                return sp.cancel(self.X[out_p-1]/self.sym[self.app_state.inexpr.upper()])
+            elif out_p == 0:
+                # Negative sign
+                return -sp.cancel(self.X[out_n-1]/self.sym[self.app_state.inexpr.upper()])
+            else:
+                # Differential
+                return sp.cancel((self.X[out_p-1]-self.X[out_n-1])/self.sym[self.app_state.inexpr.upper()])
+
+        elif grp[0].upper() == 'I':
+            # Output is a current
+            if grp[1].upper() in self.branches:
+                # Current is available in vector X directly
+                idx = len(self.nodes) - 1 + self.branches.index(grp[1].upper())
+
+                # Return symbolic expression
+                return sp.cancel(self.X[idx] / self.sym[self.app_state.inexpr.upper()])
+
+            elif grp[1].upper() in self.netlist_fields:
+                # Current through RC element calculated from differential voltage and conductance
+                f = self.netlist_fields[grp[1].upper()]
+                c = f[0][0].upper()
+                if c in "RC":
+                    out_p = self.get_node(f[1])
+                    out_n = self.get_node(f[2])
+
+                    if c == 'R': gg = 1 / self.sym[grp[1].upper()]  # R
+                    else: gg = self.s * self.sym[grp[1].upper()]  # C
+
+                    # Return symbolic expression
+                    if out_n == 0:
+                        # Cancel input expression from output expression
+                        return sp.cancel(self.X[out_p-1] / self.sym[self.app_state.inexpr.upper()] * gg)
+                    elif out_p == 0:
+                        # Negative sign
+                        return -sp.cancel(self.X[out_n-1] / self.sym[self.app_state.inexpr.upper()] * gg)
+                    else:
+                        # Differential
+                        return sp.cancel((self.X[out_p-1] - self.X[out_n-1]) / self.sym[self.app_state.inexpr.upper()] * gg)
+            else:
+                return None
+
+        elif grp[0].upper() in 'ZYLC':
+            # Output is an impedance or admittance seen by a V or I source
+            input_type = self.app_state.inexpr[0].upper()
+            output_type = grp[1][0].upper()
+
+            if input_type != output_type:
+                self.error_print("output_expression: input and output sources must be the same type")
+                return None
+
+            if input_type == "V":
+                # Input is a voltage source, output must be current through a voltage source
+
+                voltage = self.sym[self.app_state.inexpr.upper()]
+
+                if grp[1].upper() not in self.netlist_fields.keys():
+                    self.error_print("output_expression: source not found: " + grp[1])
+                    return None
+
+                # Current is available in vector X directly
+                idx = len(self.nodes) - 1 + self.branches.index(grp[1].upper())
+                current = self.X[idx]
+
+            elif input_type == "I":
+                # Input is a current source, output must be voltage across a current source
+
+                in_source = self.app_state.inexpr.upper()
+                current = self.sym[in_source]
+
+                if grp[1].upper() not in self.netlist_fields.keys():
+                    self.error_print("output_expression: source not found: " + grp[1])
+                    return None
+
+                f = self.netlist_fields[grp[1].upper()]
+
+                # Get nodes connected to the current source
+                out_p = self.add_get_node(f[1].upper())
+                out_n = self.add_get_node(f[1].upper())
+
+                if out_n == 0:
+                    voltage = self.X[out_p-1]
+                elif out_p == 0:
+                    voltage = -self.X[out_n-1]
+                else:
+                    voltage = self.X[out_p-1] - self.X[out_n-1]
+            else:
+                self.error_print("output_expression: input and output must be V or I source")
+                return None
+
+            if grp[0].upper() == "Z":
+                return sp.cancel(-voltage / current)
+            elif grp[0].upper() == "Y":
+                return sp.cancel(-current / voltage)
+            elif grp[0].upper() == "L":
+                return sp.cancel(-voltage / current / self.s)
+            elif grp[0].upper() == "C":
+                return sp.cancel(-current / voltage / self.s)
+
+        return None
 
     def get_list_input_output_expressions(self):
         # Get a (non-complete) list of input/output expressions

@@ -161,9 +161,13 @@ class WxMainWindow(wx.Frame):
 
             elif event.event_type == "parser_ok_solving":
                 # Do not update combos here, as user might be typing some in/out expression not valid yet
+                # This is needed to update input expression combo box in case input sources in the netlist have changed
+                # Error: This calls build output expression before self.X is created (because we havent solved yet)
+                # TODO: Need to separate between output expression validation and expression building
                 self.panel_netlist.fill_combos()
                 #self.enable_parse_solve(False, False)
                 #self.enable_optimize(False, settings=True, stop=False)
+                pass
 
             elif event.event_type == "solver_ok":
                 self.panel_netlist.fill_combos()
