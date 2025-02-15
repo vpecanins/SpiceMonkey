@@ -86,6 +86,10 @@ class Engine:
         self.sources_ac = None  # AC and DC values of fixed I and V sources
         self.sources_dc = None
 
+        # Nonlinear circuit elements
+        self.diodes = None
+        self.diode_models = {"1N4148": {"Is": 1e-12, "Vt": 0.025}}
+
         self.elems_fixed = None  # Values of the circuit elements with fixed value (not changed)
         self.elems_expr = None  # Expressions of the circuit elements with expression-based values
         self.elems_initial = None  # Initial values of the circuit elements to be optimized
@@ -153,7 +157,8 @@ class Engine:
             "G": "Gnnn <nodeout+> <nodeout-> <nodectl+> <nodectl-> <val>",
             "H": "Hnnn <node+> <node-> <elemctl> <val>",
             "O": "Onnn <nodein+> <nodein-> <nodeout>",
-            "K": "Knnn <inductor1> <inductor2> <val>"
+            "K": "Knnn <inductor1> <inductor2> <val>",
+            "D": "Dnnn <node+> <node-> <model> | [Is=<Is> Vt=<Vt>]"
         }
 
     def debug_print(self, s: str, end=None):
