@@ -16,6 +16,8 @@ class WxPanelNetlist(wx.Panel):
         self.worker_lock = threading.Lock()
         self.changed_flag = []
         self.parsed_tab = 0
+        self.input_exprs = []
+        self.output_exprs = []
 
         # In/out combo boxes
         self.combobox_in = wx.Choice(self)
@@ -163,7 +165,7 @@ class WxPanelNetlist(wx.Panel):
         if self.parser_solver_called_while_typing and not self.root.app_state.solve_while_typing:
             pass
         else:
-            outexpr_valid = self.engine.build_output_expr()
+            outexpr_valid = self.engine.validate_output_expr()
             if outexpr_valid is not None:
                 # Output expression is valid, call solver
                 self.root.enable_parse_solve(False, False)
@@ -267,6 +269,21 @@ class WxPanelNetlist(wx.Panel):
 
             if parser_status:
                 # Parser completed correctly
+
+                # Validate input and output expressions.
+                # If not valid, try to pick the first valid one
+                self.input_exprs, self.output_exprs = self.engine.get_list_input_output_expressions()
+
+                if self.engine.validate_output_expr() is None:
+                    # The output expression is not valid
+                    if len(self.output_exprs) != 0 and len(self.root.app_state.outexpr) == 0:
+                        self.root.app_state.outexpr = self.output_exprs[0]
+
+                if not self.engine.validate_input_expr():
+                    # The input expression is not valid
+                    if len(self.input_exprs) != 0:
+                        self.root.app_state.inexpr = self.input_exprs[0]
+
                 if self.parser_solver_called_while_typing and not self.root.app_state.solve_while_typing:
                     # Parser was called while typing and solve while typing is disabled
                     wx.PostEvent(self.root, ResultEvent("parser_ok", self.engine))
@@ -307,8 +324,6 @@ class WxPanelNetlist(wx.Panel):
                     self.root.app_state.netlist_optimized = self.txt_spice_optimized.GetValue()
 
     def fill_combos(self):
-        inexpr_bak = self.root.app_state.inexpr
-        outexpr_bak = self.root.app_state.outexpr
 
         # Workaround: Need to unbind before .Clear() because .Clear() activates the event
         self.combobox_in.Unbind(wx.EVT_CHOICE)
@@ -317,40 +332,16 @@ class WxPanelNetlist(wx.Panel):
         self.combobox_out.Clear()
         self.combobox_in.Clear()
 
-        # Fill up the combo boxes with an incomplete list of valid expressions
-        input_exprs, output_exprs = self.engine.get_list_input_output_expressions()
-
-        for el in output_exprs:
+        # Fill up the combo boxes with a list of valid expressions
+        # Lists are previously filled up by worker thread
+        for el in self.output_exprs:
             self.combobox_out.Append(el)
 
-        for el in input_exprs:
+        for el in self.input_exprs:
             self.combobox_in.Append(el)
 
-        # Check if current output expression is valid
-        outexpr_valid = self.engine.build_output_expr()
-
-        if outexpr_valid is not None:
-            # The output expression is valid
-            # self.root.app_state.outexpr = outexpr_bak
-            pass
-
-        else:
-            # The output expression is not valid
-            if len(output_exprs) != 0 and len(outexpr_bak) == 0:
-                self.root.app_state.outexpr = output_exprs[0]
-
+        # Works whether outexpr was valid or invalid
         self.combobox_out.ChangeValue(self.root.app_state.outexpr)
-
-        if inexpr_bak in input_exprs:
-            # The input expression is valid
-            # self.root.app_state.inexpr = inexpr_bak
-            pass
-
-        else:
-            # The input expression is not valid
-            if len(input_exprs) != 0:
-                self.root.app_state.inexpr = input_exprs[0]
-
         self.combobox_in.SetSelection(self.combobox_in.FindString(self.root.app_state.inexpr))
 
         self.combobox_in.Bind(wx.EVT_CHOICE, self.event_handler_combobox)

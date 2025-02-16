@@ -170,7 +170,8 @@ class WxMainWindow(wx.Frame):
                 pass
 
             elif event.event_type == "solver_ok":
-                self.panel_netlist.fill_combos()
+                # Is this needed?
+                # self.panel_netlist.fill_combos()
 
                 if self.panel_netlist.parsed_tab == 0:
                     self.h_original = self.engine.h_initial

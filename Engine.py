@@ -126,6 +126,7 @@ class Engine:
         self.b_initial = None
         self.b_step = None
         self.last_A_solved = None   # Last circuit matrix that was inverted, to skip inversion if we can
+        self.last_M_solved = None
         self.stop_flag = False
         self.callback = callback
         self.x_initial = None
@@ -798,7 +799,8 @@ class Engine:
 
         # Heart of the algorithm: Solution of the system of equations
         ################################################
-        if self.last_A_solved is not None and self.last_A_solved == A:
+        if (self.last_A_solved is not None and self.last_A_solved == A) and \
+            (self.last_M_solved is not None and self.last_M_solved == M):  # Needed if sources change but matrix stay
             self.info_print("solve: solving matrix not needed")
         else:
             self.info_print("solve: solving matrix, this may take some time... ")
@@ -832,6 +834,7 @@ class Engine:
 
             # Save last one solved to see if we need to solve it again on the future
             self.last_A_solved = A
+            self.last_M_solved = M
 
             self.debug_print("Solution vector X =")
             self.debug_print(sp.pretty(self.X, wrap_line=False, num_columns=2000))
@@ -843,6 +846,14 @@ class Engine:
         if self.output_expr is None:
             # Handle output expression already prints error if needed
             return False
+
+        self.debug_print("Input expression:")
+        self.debug_print(sp.pretty(self.sym[self.app_state.inexpr.upper()], wrap_line=False, num_columns=2000))
+        self.debug_print("")
+
+        self.debug_print("Output expression (before substitution):")
+        self.debug_print(sp.pretty(self.output_expr, wrap_line=False, num_columns=2000))
+        self.debug_print("")
 
         # Substitute expressions in element values
         for key, el in self.elems_expr.items():
@@ -867,11 +878,7 @@ class Engine:
         for key, el in self.elems_initial.items():
             self.h_initial = self.h_initial.subs(self.sym[key], el)
 
-        self.debug_print("Input expression:")
-        self.debug_print(sp.pretty(self.sym[self.app_state.inexpr.upper()], wrap_line=False, num_columns=2000))
-        self.debug_print("")
-
-        self.debug_print("Output expression:")
+        self.debug_print("Output expression (after substitution):")
         self.debug_print(sp.pretty(self.output_expr, wrap_line=False, num_columns=2000))
         self.debug_print("")
 
@@ -886,29 +893,16 @@ class Engine:
 
         return True
 
-    def build_output_expr(self):
-        """ Check if self.app_state.outexpr is valid and return symbolic expression
-
-        Returns:
-            None, if self.app_state.outexpr is not valid
-            Symbolic expression, if self.app_state.outexpr is valid
-
-        """
-
+    def validate_input_expr(self):
         # Validate input expression
         if self.app_state.inexpr.upper() not in self.sources_dc.keys():
             if self.app_state.inexpr.upper() not in self.sources_ac.keys():
-                # Input expression is not valid. Will try to get the first V or I source
-                # This needs to be here rather than in the fill_combos, because otherwise, the combos get updated
-                # but the user has to parse again
-                if len(self.sources_dc.keys()) > 0:
-                    self.app_state.inexpr = list(self.sources_dc.keys())[0]
-                elif len(self.sources_ac.keys()) > 0:
-                    self.app_state.inexpr = list(self.sources_ac.keys())[0]
+                self.error_print("input_expression: source not found: " + self.app_state.inexpr)
+                return False
+        return True
 
-                self.error_print("output_expression: invalid input expression, changing to {}".format(self.app_state.inexpr))
-
-        # Output expression handling
+    def validate_output_expr(self):
+        # Validate output expression
         regex = r"([VIZYLC])\(([^,]*)(,?.*)\)"
         matches = re.findall(regex, self.app_state.outexpr, re.IGNORECASE)
 
@@ -935,7 +929,7 @@ class Engine:
                     if n2 in self.nodes:  # V(node+, node-) syntax
                         out_n = self.nodes.index(n2)
                     else:
-                        self.error_print("output_expression: V(out_n) node not valid")
+                        self.debug_print("output_expression: V(out_n) node not valid")
                         return None
 
             else:
@@ -946,15 +940,90 @@ class Engine:
                         out_p = self.get_node(f[1])
                         out_n = self.get_node(f[2])
                     else:
-                        self.error_print("output_expression: V(element) not found")
+                        self.debug_print("output_expression: V(element) not found")
                         return None
                 else:
-                    self.error_print("output_expression: V(out_p) or V(element) not valid")
+                    self.debug_print("output_expression: V(out_p) or V(element) not valid")
                     return None
 
             if out_p == out_n:
-                self.error_print("output_expression: V(node,node) selected, output is zero")
+                self.debug_print("output_expression: V(node,node) selected, output is zero")
                 return None
+
+            # This can be re-used to build_output_expression
+            return ("V", out_p, out_n)
+
+        elif grp[0].upper() == 'I':
+            # Output is a current
+            if grp[1].upper() in self.branches:
+                # Current is available in vector X directly
+                return ("Ibranch", grp[1].upper(), "")
+
+            elif grp[1].upper() in self.netlist_fields:
+                # Current through RC element calculated from differential voltage and conductance
+                f = self.netlist_fields[grp[1].upper()]
+                c = f[0][0].upper()
+                if c in "RC":
+                    return ("Ielem", grp[1].upper(), "")
+
+            else:
+                self.debug_print("output_expression: I() branch or element not found")
+                return None
+
+        elif grp[0].upper() in 'ZYLC':
+            # Output is an impedance or admittance seen by a V or I source
+            input_type = self.app_state.inexpr[0].upper()
+            output_type = grp[1][0].upper()
+
+            if input_type != output_type:
+                self.debug_print("output_expression: input and output sources must be the same type")
+                return None
+
+            if input_type == "V":
+                if grp[1].upper() not in self.netlist_fields.keys():
+                    self.debug_print("output_expression: source not found: " + grp[1])
+                    return None
+                else:
+                    return (grp[0].upper(), "V", grp[1].upper())
+            elif input_type == "I":
+                if grp[1].upper() not in self.netlist_fields.keys():
+                    self.debug_print("output_expression: source not found: " + grp[1])
+                    return None
+                else:
+                    return (grp[0].upper(), "I", grp[1].upper())
+            else:
+                self.debug_print("output_expression: input and output must be V or I source")
+                return None
+
+        else:
+            # Should never reach here
+            return None
+
+
+
+    def build_output_expr(self):
+        """ Check if self.app_state.outexpr is valid and return symbolic expression
+
+        Returns:
+            None, if self.app_state.outexpr is not valid
+            Symbolic expression, if self.app_state.outexpr is valid
+
+        """
+
+        if not self.validate_input_expr():
+            return None
+
+        valid = self.validate_output_expr()
+
+        self.debug_print("build_output_expr: valid output expression: {}".format(valid))
+
+        if valid is None:
+            return None
+
+        # Build output expression
+        if valid[0] == 'V':
+            out_n = valid[1]
+            out_p = valid[2]
 
             # Return symbolic expression
             if out_n == 0:
@@ -967,76 +1036,56 @@ class Engine:
                 # Differential
                 return sp.cancel((self.X[out_p-1]-self.X[out_n-1])/self.sym[self.app_state.inexpr.upper()])
 
-        elif grp[0].upper() == 'I':
-            # Output is a current
-            if grp[1].upper() in self.branches:
-                # Current is available in vector X directly
-                idx = len(self.nodes) - 1 + self.branches.index(grp[1].upper())
+        elif valid[0] == 'Ibranch':
+            idx = len(self.nodes) - 1 + self.branches.index(valid[1])
 
-                # Return symbolic expression
-                return sp.cancel(self.X[idx] / self.sym[self.app_state.inexpr.upper()])
+            # Return symbolic expression
+            return sp.cancel(self.X[idx] / self.sym[self.app_state.inexpr.upper()])
 
-            elif grp[1].upper() in self.netlist_fields:
-                # Current through RC element calculated from differential voltage and conductance
-                f = self.netlist_fields[grp[1].upper()]
-                c = f[0][0].upper()
-                if c in "RC":
-                    out_p = self.get_node(f[1])
-                    out_n = self.get_node(f[2])
+        elif valid[0] == 'Ielem':
+            # Current through RC element calculated from differential voltage and conductance
+            f = self.netlist_fields[valid[1]]
+            c = f[0][0].upper()
 
-                    if c == 'R': gg = 1 / self.sym[grp[1].upper()]  # R
-                    else: gg = self.s * self.sym[grp[1].upper()]  # C
+            out_p = self.get_node(f[1])
+            out_n = self.get_node(f[2])
 
-                    # Return symbolic expression
-                    if out_n == 0:
-                        # Cancel input expression from output expression
-                        return sp.cancel(self.X[out_p-1] / self.sym[self.app_state.inexpr.upper()] * gg)
-                    elif out_p == 0:
-                        # Negative sign
-                        return -sp.cancel(self.X[out_n-1] / self.sym[self.app_state.inexpr.upper()] * gg)
-                    else:
-                        # Differential
-                        return sp.cancel((self.X[out_p-1] - self.X[out_n-1]) / self.sym[self.app_state.inexpr.upper()] * gg)
+            if c == 'R': gg = 1 / self.sym[valid[1].upper()]  # R
+            else: gg = self.s * self.sym[valid[1].upper()]  # C
+
+            # Return symbolic expression
+            if out_n == 0:
+                # Cancel input expression from output expression
+                return sp.cancel(self.X[out_p-1] / self.sym[self.app_state.inexpr.upper()] * gg)
+            elif out_p == 0:
+                # Negative sign
+                return -sp.cancel(self.X[out_n-1] / self.sym[self.app_state.inexpr.upper()] * gg)
             else:
-                return None
+                # Differential
+                return sp.cancel((self.X[out_p-1] - self.X[out_n-1]) / self.sym[self.app_state.inexpr.upper()] * gg)
 
-        elif grp[0].upper() in 'ZYLC':
+        elif valid[0] in 'ZYLC':
             # Output is an impedance or admittance seen by a V or I source
-            input_type = self.app_state.inexpr[0].upper()
-            output_type = grp[1][0].upper()
-
-            if input_type != output_type:
-                self.error_print("output_expression: input and output sources must be the same type")
-                return None
+            input_type = valid[1]
 
             if input_type == "V":
                 # Input is a voltage source, output must be current through a voltage source
-
                 voltage = self.sym[self.app_state.inexpr.upper()]
 
-                if grp[1].upper() not in self.netlist_fields.keys():
-                    self.error_print("output_expression: source not found: " + grp[1])
-                    return None
-
                 # Current is available in vector X directly
-                idx = len(self.nodes) - 1 + self.branches.index(grp[1].upper())
+                idx = len(self.nodes) - 1 + self.branches.index(valid[2].upper())
                 current = self.X[idx]
 
             elif input_type == "I":
                 # Input is a current source, output must be voltage across a current source
-
                 in_source = self.app_state.inexpr.upper()
                 current = self.sym[in_source]
 
-                if grp[1].upper() not in self.netlist_fields.keys():
-                    self.error_print("output_expression: source not found: " + grp[1])
-                    return None
-
-                f = self.netlist_fields[grp[1].upper()]
+                f = self.netlist_fields[valid[2]]
 
                 # Get nodes connected to the current source
                 out_p = self.add_get_node(f[1].upper())
-                out_n = self.add_get_node(f[1].upper())
+                out_n = self.add_get_node(f[2].upper())
 
                 if out_n == 0:
                     voltage = self.X[out_p-1]
@@ -1045,16 +1094,15 @@ class Engine:
                 else:
                     voltage = self.X[out_p-1] - self.X[out_n-1]
             else:
-                self.error_print("output_expression: input and output must be V or I source")
-                return None
+                assert 0
 
-            if grp[0].upper() == "Z":
+            if valid[0].upper() == "Z":
                 return sp.cancel(-voltage / current)
-            elif grp[0].upper() == "Y":
+            elif valid[0].upper() == "Y":
                 return sp.cancel(-current / voltage)
-            elif grp[0].upper() == "L":
+            elif valid[0].upper() == "L":
                 return sp.cancel(-voltage / current / self.s)
-            elif grp[0].upper() == "C":
+            elif valid[0].upper() == "C":
                 return sp.cancel(-current / voltage / self.s)
 
         return None
