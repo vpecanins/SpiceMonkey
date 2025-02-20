@@ -1,3 +1,5 @@
+import sys
+
 import wx
 from WxBodePlot import WxBodePlot
 from WxPanelPoleZero import WxPanelPoleZero
@@ -51,9 +53,16 @@ class WxMainWindow(wx.Frame):
         # Register event handler
         self.Connect(-1, -1, EVT_RESULT_ID, self.callback_engine_thread_event)
 
+        # Fix DPI for MacBooks
+        dpi = wx.ScreenDC().GetPPI()[0]
+        if 'darwin' in sys.platform:
+            if (dpi > 70):
+                dpi = 3 * dpi / 4
+                print("Changing matplotlib DPI to {}".format(dpi))
+
         # Three panels
         self.panel_netlist =  WxPanelNetlist(splitter, self)
-        self.panel_bodeplot = WxBodePlot(splitter2, self)
+        self.panel_bodeplot = WxBodePlot(splitter2, self, id=-1, dpi=dpi)
         self.panel_polezero = WxPanelPoleZero(splitter2, self)
 
         # Split window in three horizontal resizable panes

@@ -43,9 +43,9 @@
             1
         ]
     ],
-    "inexpr": "Vdac",
-    "outexpr": "V(out)",
-    "netlist": "; 3rd order Sallen-Key lowpass filter\nVin 1 0 AC 1\nVdac 6 0 AC 1\nRdac 6 2 {2*R1}\nR1 1 2 10k\nC1 2 0 100p min=10p\nR\ud83d\ude00\ufe0f 2 3 10K\nC2 3 out 100p min=10p\nR3 3 4 10K\nC3 4 0 100p min=10p\nRa out 5 10K*\nRb 5 0 1K*\nO1 4 5 out\n",
+    "inexpr": "Vin",
+    "outexpr": "V(2)",
+    "netlist": "; 3rd order Sallen-Key lowpass filter\nVin 1 0 1 AC 1\nR1 1 2 2K\nR2 2 0 1K\nR3 2 3 1K\nR4 3 0 1K\nC1 3 4 10n\nC2 4 0 10n\n# C3 2 4 10n\nD1 2 0  1N4148",
     "netlist_optimized": "; 3rd order Sallen-Key lowpass filter\nVin 1 0 AC 1\nVdac 6 0 AC 1\nRdac 6 2 {2*R1} ; 534.49\nR1 1 2 267.25\nC1 2 0 1.4447n min=10p\nR\ud83d\ude00\ufe0f 2 3 577.11\nC2 3 out 90.615p min=10p\nR3 3 4 507.39\nC3 4 0 590.26p min=10p\nRa out 5 10K*\nRb 5 0 1K*\nO1 4 5 out\n",
     "minval": {
         "R": 1.0,
@@ -68,7 +68,7 @@
         "K": 1.0
     },
     "parse_while_typing": true,
-    "solve_while_typing": true,
+    "solve_while_typing": false,
     "simplify_after_solve": false,
     "linestyle_initial": "o",
     "linecolor_initial": "green",

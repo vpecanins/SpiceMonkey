@@ -7,7 +7,7 @@ import time
 from typing import Callable
 from sympy.parsing.sympy_parser import parse_expr
 from AppState import AppState
-
+import copy
 import sys, os
 #sys.path.insert(0, "/home/peca/Repos/scipy-leastsquares-callback-new/build-install/lib/python3/dist-packages")
 #from scipy.optimize import least_squares
@@ -87,8 +87,13 @@ class Engine:
         self.sources_dc = None
 
         # Nonlinear circuit elements
-        self.diodes = None
-        self.diode_models = {"1N4148": {"Is": 1e-12, "Vt": 0.025}}
+        self.elems_nonlinear = None
+        self.elems_nonlinear_subs = None
+        self.v = sp.Symbol('v')
+        self.labels = None
+        self.Gnl = None  # Linearized conductances for Jacobian computation
+        self.Cnl = None  # Linearized capacitances & inductances
+        self.Mnl = None  # Nonlinear currents into the nodes
 
         self.elems_fixed = None  # Values of the circuit elements with fixed value (not changed)
         self.elems_expr = None  # Expressions of the circuit elements with expression-based values
@@ -118,7 +123,7 @@ class Engine:
 
         self.G = None       # (NxN) Conductances, incidence matrices and transconductances
         self.C = None       # (NxN) Capacitors, inductors, and mutual inductances
-        self.M = None       # (Nx1) Independent sources (voltage & current) and zeros for GHKL elements
+        self.M = None       # (Nx1) Independent sources (voltage & current) and zeros for GHKL elements and nonlinear elements
         self.X = None       # (Nx1) Vector of unknowns (Node voltages & Branch currents)
 
         # The 's' variable from Laplace transform
@@ -219,6 +224,11 @@ class Engine:
         self.elems_fixed = {}
         self.elems_expr = {}
         self.elems_initial = {}
+
+        self.elems_nonlinear = {}  # Nonlinear elements constitutive equations (DC) used for finding DC operating point
+        self.elems_nonlinear_subs = {}  # Control voltages substituted by node voltages
+        self.labels = []
+
         self.minval = {}
         self.maxval = {}
         self.optimized_lines = {}
@@ -256,7 +266,7 @@ class Engine:
                                  + ": expected " + self.syntax_strings[c])
                 return False
 
-            if c in "RLCVIEFGHOK":
+            if c in "RLCVIEFGHOKD":
                 if len(f) < 4:
                     self.error_print("parse: line " + str(idx+1)
                                      + ": expected " + self.syntax_strings[c])
@@ -310,23 +320,24 @@ class Engine:
             elif c in "EG":
                 self.elems_val[f[0].upper()] = f[5]
             elif c in "VI":
+                # Sources can have AC and DC value, it is handled differently
                 i = 3
                 firstset = False
                 while True:
                     u = f[i].upper()
-                    if u == "AC":
+                    if u == "AC":  # AC: Next field is ac value
                         if (len(f)-1) >= i + 1:
                             i = i + 1
                             self.sources_ac[f[0].upper()] = f[i]
                         else:
                             self.sources_ac[f[0].upper()] = 0
-                    elif u == "DC":
+                    elif u == "DC":  # DC: Next field is dc value
                         if (len(f)-1) >= i + 1:
                             i = i + 1
                             self.sources_dc[f[0].upper()] = f[i]
                         else:
                             self.sources_dc[f[0].upper()] = 0
-                    else:
+                    else:  # First field is not AC or DC, interpret as DC value
                         if not firstset:
                             self.sources_dc[f[0].upper()] = f[i]
                             firstset = True
@@ -338,6 +349,35 @@ class Engine:
                     else:
                         break
 
+            elif c in "D":
+                # Diode nonlinear model
+                if len(f) == 4:
+                    # Diode specified as model number (1N4148)
+                    Vt = 0.025
+                    Is = 25*1e-9
+                    Vmax = 1.0 # To prevent exponential blow-up
+                    model = {
+                        "i": sp.Piecewise(
+                            (Is * (sp.exp(self.v/Vt)-1), self.v < Vmax),
+                            (Is * (sp.exp(Vmax/Vt)-1) + Is/Vt * sp.exp(Vmax/Vt) * (self.v - Vmax), self.v > Vmax)
+                        ),
+                        "g": sp.Piecewise(
+                            (Is/Vt * sp.exp(self.v/Vt), self.v < Vmax),
+                            (Is/Vt * sp.exp(Vmax/Vt), self.v > Vmax)
+                        ),
+                        "c": 4e-12 + 1e-90*self.v  # Just a placeholder
+                    }
+
+                    self.elems_nonlinear[f[0].upper()] = model
+
+                    for key, el in model.items():
+                        # Create symbol <variable_name>_<element_name>
+                        self.sym[key.upper() + "_" + f[0].upper()] = sp.Symbol(self.prefix + key + "_" + f[0], real=True)
+
+                else:
+                    # Diode specified as parameters ( not implemented yet)
+                    assert(0)
+
             self.elems_line[f[0].upper()] = idx
             self.netlist_fields[f[0].upper()] = f
 
@@ -348,6 +388,16 @@ class Engine:
         if len(self.nodes) < 2:
             self.error_print("parse: netlist contains no nodes")
             return False
+
+        self.elems_nonlinear_subs = copy.deepcopy(self.elems_nonlinear)
+
+        # Create vector of labels for the unknowns (mainly needed for nonlinear solving)
+        for key in self.nodes:
+            if key != "0":
+                self.labels.append(sp.Symbol("v_" + str(key)))
+
+        for key in self.branches:
+            self.labels.append(sp.Symbol("i_" + str(key)))
 
         # Interpret val as fixed, initial or expression-based
         for key, val in self.elems_val.items():
@@ -429,6 +479,13 @@ class Engine:
 
         # These form the vector of knowns
         self.M = sp.zeros(N+B, 1)
+
+        # For nonlinear elements, to calculate the Jacobian
+        self.Gnl = sp.zeros(N + B, N + B)
+        self.Cnl = sp.zeros(N + B, N + B)
+
+        # These form the vector of nonlinear currents into the nodes
+        self.Mnl = sp.zeros(N + B, 1)
 
         # Second pass:
         # Fill up design matrix
@@ -646,23 +703,82 @@ class Engine:
                 self.C[N + index1, N + index2] -= mutual_l
                 self.C[N + index2, N + index1] -= mutual_l
 
+            elif c == 'D': # Diode (nonlinear element)
+                nodep = self.add_get_node(f[1])
+                noden = self.add_get_node(f[2])
+
+                # Group 1 only, for now
+                gm = self.sym["G_" + f[0].upper()]  # Linearized conductance
+                cj = self.sym["C_" + f[0].upper()]  # Linearized capacitance
+                idiode = self.sym["I_" + f[0].upper()]  # Large signal current
+
+                if nodep == 0:  # First terminal is ground
+                    self.Cnl[noden - 1, noden - 1] += cj
+                    self.Gnl[noden - 1, noden - 1] += gm
+                    self.Mnl[noden - 1, 0] -= idiode
+
+                    # Update constitutive equation
+                    for k1, el1 in self.elems_nonlinear_subs[key].items():
+                        self.elems_nonlinear_subs[key][k1] = el1.subs(self.v, -self.labels[noden])
+
+                elif noden == 0:  # Second terminal is ground
+                    self.Cnl[nodep - 1, nodep - 1] += cj
+                    self.Gnl[nodep - 1, nodep - 1] += gm
+                    self.Mnl[nodep - 1, 0] += idiode
+
+                    # Update constitutive equation
+                    for k1, el1 in self.elems_nonlinear_subs[key].items():
+                        self.elems_nonlinear_subs[key][k1] = el1.subs(self.v, self.labels[nodep])
+
+                else:  # No terminal is ground
+                    self.Cnl[nodep - 1, nodep - 1] += cj
+                    self.Cnl[noden - 1, noden - 1] += cj
+                    self.Gnl[nodep - 1, nodep - 1] += gm
+                    self.Gnl[noden - 1, noden - 1] += gm
+                    self.Mnl[noden - 1, 0] -= idiode
+                    self.Mnl[nodep - 1, 0] += idiode
+
+                    # TODO: Untested if inversion works with nonlinear elements
+                    # Probably not because bias circuit (CM) is now different from differential.
+
+                    inv = 1  # Is any of the nodes inverted?
+                    if f[1][0] == '-': inv = -inv
+                    if f[2][0] == '-': inv = -inv
+
+                    self.Cnl[nodep - 1, noden - 1] -= inv * cj  # Matrix stays symmetric
+                    self.Cnl[noden - 1, nodep - 1] -= inv * cj
+                    self.Gnl[nodep - 1, noden - 1] -= inv * gm
+                    self.Gnl[noden - 1, nodep - 1] -= inv * gm
+
+                    # Update constitutive equation
+                    for k1, el1 in self.elems_nonlinear_subs[key].items():
+                        self.elems_nonlinear_subs[key][k1] = el1.subs(self.v, self.labels[nodep] - self.labels[noden])
+
             else:
                 self.error_print("parse: unknown component in filling up matrix")
                 return False
 
         self.debug_print("Nodes = " + str(self.nodes))
         self.debug_print("Branches = " + str(self.branches))
+        self.debug_print("Labels = " + str(self.labels))
 
         self.debug_print("DC sources = " + str(self.sources_dc))
         self.debug_print("AC sources = " + str(self.sources_ac))
 
-        self.debug_print("Circuit matrix G + sC =")
-        self.debug_print(sp.pretty(self.G + self.C*self.s, wrap_line=False, num_columns=2000))
+        self.debug_print("Nonlinear elements = ")
+        for key, el in self.elems_nonlinear.items():
+            self.debug_print("    {}: {}".format(key, str(el)))
 
+        self.debug_print("Nonlinear elements (after substitution) = ")
+        for key, el in self.elems_nonlinear_subs.items():
+            self.debug_print("    {}: {}".format(key, str(el)))
+
+        self.debug_print("Linear circuit matrix (G + sC), Unknowns X, Vector of knowns M = ")
+        self.debug_print(sp.pretty((self.G + self.C*self.s, (sp.Matrix(self.labels)), self.M), wrap_line=False, num_columns=2000))
         self.debug_print("\n\n")
 
-        self.debug_print("Vector of knowns M = ")
-        self.debug_print(sp.pretty(self.M, wrap_line=False, num_columns=2000))
+        self.debug_print("Nonlinear circuit matrix (Gnl + sCnl), Unknowns X, Vector of knowns Mnl = ")
+        self.debug_print(sp.pretty((self.Gnl + self.Cnl * self.s, (sp.Matrix(self.labels)), self.Mnl), wrap_line=False, num_columns=2000))
         self.debug_print("\n\n")
 
         return True
@@ -712,22 +828,136 @@ class Engine:
             txt = txt + l + "\n"
         return txt
 
-    def solve(self):
+    def create_dc_matrix(self, Gdc, Cdc):
+        # Replace inductors by shorts, and capacitors by open circuits
+        # Except in the nodes where there are only capacitors connected
+        # TODO: Also handle nodes where only inductors are connected
+        # Tested so far: Elements: RLCVE
 
-        # Validate input expression
-        if self.app_state.inexpr.upper() not in self.sources_dc.keys():
-            if self.app_state.inexpr.upper() not in self.sources_ac.keys():
-                self.error_print("solve: invalid input expression")
-                return False
+        # Substitute expressions in element values
+        for key, el in self.elems_expr.items():
+            Gdc = Gdc.subs(self.sym[key], el)
+            Cdc = Cdc.subs(self.sym[key], el)
 
-        # Superposition principle, substitute by 0 all sources that are not the input
-        subs_zero = []
+        # Substitute fixed elements for now
+        for key, el in self.elems_fixed.items():
+            Gdc = Gdc.subs(self.sym[key], el)
+            Cdc = Cdc.subs(self.sym[key], el)
+
+        # Substitute all elements by their initial values for now
+        for key, el in self.elems_initial.items():
+            Gdc = Gdc.subs(self.sym[key], el)
+            Cdc = Cdc.subs(self.sym[key], el)
+
+        # Make 0 the reactances of the inductors (short them)
+        for row in range(len(self.nodes), Cdc.rows):
+            for col in range(len(self.nodes), Cdc.cols):
+                Cdc[row, col] = 0
+
+        # Get elements that are 0 of the conductance matrix
+        gzero = Gdc.applyfunc(lambda x: 1 if x == 0 else 0)
+        # sp.pprint(gzero, wrap_line=False, num_columns=2000);
+
+        # Make 0 all elements of the C matrix where there is a conductance
+        Cdc = sp.matrix_multiply_elementwise(Cdc, gzero)
+
+        # Make 0 all upper triangular elements of the C matrix
+        # This means that the Cs don't load the nodes but are driven by the nodes
+        Cdc = Cdc.lower_triangular(0)
+        # sp.pprint(Cdc, wrap_line=False, num_columns=2000);
+
+        return Gdc + Cdc
+
+    def solve_dc(self):
+        # Solve DC operating point
+
+        # Short inductors, open caps, etc
+        Adc = self.create_dc_matrix(self.G, self.C)
+        Adc_nl = self.create_dc_matrix(self.Gnl, self.Cnl)
+
+        # Substitute DC constant sources
+        Mdc = self.M
         for key in self.sources_dc.keys():
             c = key[0][0]
             if c in "VI":
-                if not key == self.app_state.inexpr.upper():
-                    subs_zero.append(key)
+                Mdc = Mdc.subs(self.sym[key], float(self.sources_dc[key]))
 
+        def solve_sys(A, M):
+            solutions = sp.linsolve((A, M))
+            X = None
+            for solution in solutions:
+                if X is None:
+                    X = solution  # Pick only first solution
+                else:
+                    self.error_print("solve_dc: system has not an unique solution")
+                    return None
+
+            if X is None:
+                self.error_print("solve_dc: unsolvable system")
+                return None
+
+            return sp.Matrix(list(X))
+
+        # Newton Raphson initial guess: All nonlinear variables equal to zero
+        def substitute_evaluate_nonlinear(A, x):
+            for key, el in self.elems_nonlinear_subs.items():  # For each nonlinear element
+                for key1, el1 in el.items():  # For each equation inside nonlinear element
+                    eqn_sub = el1.subs([(self.labels[i], x[i]) for i in range(0, len(x))])
+                    #eqn_sub = el1.copy()
+                    #for idx in range(0, len(self.labels)):  # For each voltage that can possibly control the nonlinear element
+                    #    eqn_sub = eqn_sub.subs(self.labels[idx], x[idx])
+
+                    symbl = self.sym[(key1 + "_" + key).upper()]  # Get the symbol of the nonlinear variable
+                    A = A.subs(symbl, sp.Float(eqn_sub))
+
+            return A
+
+        # Newton-Raphson iterations
+        i = 0
+        Xdc = sp.zeros(len(Mdc),1)  # Initialize to 0 (arbitrary)
+        while i < 100:
+
+            # Calculate the jacobian matrix evaluated at X
+            J = substitute_evaluate_nonlinear(Adc + Adc_nl, Xdc)
+
+            # Calculate the RHS evaluated at X
+            RHS = Mdc - Adc * Xdc - substitute_evaluate_nonlinear(self.Mnl, Xdc)
+
+            # Solve linear system
+            deltaX = solve_sys(J, RHS)
+
+            if deltaX is None:
+                return None
+            else:
+                Xdc = Xdc + deltaX
+
+            err2 = sp.Transpose(deltaX)*deltaX
+            err2 = float(err2[0])
+
+            self.debug_print("solve_dc: ["+ str(i) +"] " + str(list(Xdc)) + " err2 = " + str(err2))
+
+            if err2 < 1e-12:
+                break
+
+            # Increment iteration counter
+            i = i + 1
+
+        self.debug_print("DC solution: \n" + sp.pretty(Xdc, wrap_line=False, num_columns=2000))
+
+    def solve(self):
+
+        # Validate input expression
+        if self.app_state.inexpr.upper() not in self.sources_ac.keys():
+            self.error_print("solve: invalid input expression")
+            return False
+
+        # Just trying
+        self.solve_dc()
+
+
+        # Superposition principle, substitute by 0 all sources that are not the input
+        # Just save them in the list subs_zero for now, actual substitution is done later
+        subs_zero = []
         for key in self.sources_ac.keys():
             c = key[0][0]
             if c in "VI":
